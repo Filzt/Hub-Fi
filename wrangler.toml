@@ -31,7 +31,7 @@ new_sqlite_classes = ["MeliToken", "Store"]
 crons = ["*/10 * * * *"]
 
 [vars]
-MODO = "manual" # sombra | manual (grava só pelo botão) | automatico (grava pelo webhook)
+MODO = "automatico" # sombra | manual (grava só pelo botão) | automatico (grava pelo webhook)
 MELI_API = "https://api.mercadolibre.com"
 MELI_USER_ID = "3474041384"
 SANKHYA_API = "https://api.sankhya.com.br"
