@@ -1,0 +1,4 @@
+#!/bin/sh
+# Barra o push (que vira deploy na Cloudflare) se tipos ou testes falharem.
+npx tsc -p . || { echo "pre-push: tsc falhou - push bloqueado"; exit 1; }
+npm test --silent || { echo "pre-push: testes falharam - push bloqueado"; exit 1; }
