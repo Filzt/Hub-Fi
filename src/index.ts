@@ -4,6 +4,7 @@ import { TOPICOS_ACEITOS } from "./config.ts";
 import { tokenStub } from "./meli.ts";
 import { PAINEL_HTML } from "./painel.ts";
 import { confirmarPedidoErp, gravarPedido, processarEvento, processarPedido } from "./processamento.ts";
+import { processarNf, varrerNfs } from "./nf.ts";
 import { storeStub } from "./store.ts";
 import type { Env } from "./tipos.ts";
 
@@ -91,6 +92,22 @@ async function rotaApi(req: Request, env: Env, url: URL): Promise<Response> {
     await store.log(res.ok ? "info" : "aviso", null, `confirmar NUNOTA ${r[1]}: ${res.ok ? "ok (L)" : res.motivo}`);
     return json(res, res.ok ? 200 : 409);
   }
+  // NF-e → ML --------------------------------------------------------------------
+  if (req.method === "GET" && p === "/api/nfs") return json({ xmlModo: env.XML_MODO, nfs: await store.listarNfs() });
+  if (req.method === "POST" && p === "/api/nfs/varrer") {
+    // Atualiza a situação sem enviar (enviar só com XML_MODO automatico ou botão por NF).
+    return json(await varrerNfs(env, false, 3, 6));
+  }
+  r = m(/^\/api\/nfs\/(\d+)\/enviar$/);
+  if (req.method === "POST" && r) {
+    const nf = await store.nf(r[1]);
+    if (!nf) return json({ erro: "NF não encontrada — rode a varredura antes" }, 404);
+    try {
+      return json({ status: await processarNf(env, r[1], nf.nunota_nf, true), nf: await store.nf(r[1]) });
+    } catch (e) {
+      return json({ erro: (e as Error).message }, 409);
+    }
+  }
   if (req.method === "GET" && p === "/api/eventos") {
     return json({ eventos: await store.listarEventos(url.searchParams.get("status")) });
   }
@@ -159,5 +176,10 @@ export default {
     const store = storeStub(env);
     const devidos = await store.eventosDevidos();
     for (const ev of devidos) await processarEvento(env, ev); // sequencial: respeita o ML
+    try {
+      await varrerNfs(env, env.XML_MODO === "automatico");
+    } catch (e) {
+      await store.log("erro", null, `varredura de NF falhou: ${(e as Error).message}`);
+    }
   },
 } satisfies ExportedHandler<Env>;

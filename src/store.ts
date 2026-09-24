@@ -42,6 +42,20 @@ export type Gravacao = {
   gravacao_erro: string | null;
 };
 
+/** Envio do XML da NF-e ao ML, por pedido (chave = pack_id ou order_id). */
+export type Nf = {
+  chave: string;
+  nunota_nf: number;
+  shipment_id: string | null;
+  logistica: string | null;
+  fiscal_key: string | null;
+  // pronto | enviado | ja_no_ml | aguardando_ml | divergente | nao_se_aplica | cancelado | erro
+  status: string;
+  detalhe: string | null;
+  tentativas: number;
+  atualizado_em: number;
+};
+
 export class Store extends DurableObject<Env> {
   private sql: SqlStorage;
 
@@ -77,6 +91,17 @@ export class Store extends DurableObject<Env> {
         atualizado_em INTEGER NOT NULL
       );
       CREATE INDEX IF NOT EXISTS ix_pedidos_data ON pedidos(data_ml);
+      CREATE TABLE IF NOT EXISTS nfs (
+        chave TEXT PRIMARY KEY,
+        nunota_nf INTEGER NOT NULL,
+        shipment_id TEXT,
+        logistica TEXT,
+        fiscal_key TEXT,
+        status TEXT NOT NULL,
+        detalhe TEXT,
+        tentativas INTEGER NOT NULL DEFAULT 0,
+        atualizado_em INTEGER NOT NULL
+      );
       CREATE TABLE IF NOT EXISTS travas (
         nome TEXT PRIMARY KEY,
         ate INTEGER NOT NULL
@@ -124,6 +149,26 @@ export class Store extends DurableObject<Env> {
       `UPDATE pedidos SET gravacao = ?, gravacao_em = ?, nunota = COALESCE(?, nunota), gravacao_erro = ? WHERE chave = ?`,
       estado, Date.now(), dados.nunota ?? null, estado === "erro" ? (dados.erro ?? "").slice(0, 1000) : null, chave,
     );
+  }
+
+  nf(chave: string): Nf | null {
+    return this.sql.exec<Nf>(`SELECT * FROM nfs WHERE chave = ?`, chave).toArray()[0] ?? null;
+  }
+
+  salvarNf(n: Omit<Nf, "tentativas" | "atualizado_em">, somarTentativa = false): void {
+    this.sql.exec(
+      `INSERT INTO nfs (chave, nunota_nf, shipment_id, logistica, fiscal_key, status, detalhe, tentativas, atualizado_em)
+       VALUES (?,?,?,?,?,?,?,?,?)
+       ON CONFLICT(chave) DO UPDATE SET nunota_nf=excluded.nunota_nf, shipment_id=excluded.shipment_id,
+         logistica=excluded.logistica, fiscal_key=excluded.fiscal_key, status=excluded.status,
+         detalhe=excluded.detalhe, tentativas=nfs.tentativas + excluded.tentativas, atualizado_em=excluded.atualizado_em`,
+      n.chave, n.nunota_nf, n.shipment_id, n.logistica, n.fiscal_key, n.status, (n.detalhe ?? "").slice(0, 1000),
+      somarTentativa ? 1 : 0, Date.now(),
+    );
+  }
+
+  listarNfs(limite = 200): Nf[] {
+    return this.sql.exec<Nf>(`SELECT * FROM nfs ORDER BY atualizado_em DESC LIMIT ?`, limite).toArray();
   }
 
   /**

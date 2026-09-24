@@ -34,7 +34,8 @@ export const PAINEL_HTML = /* html */ `<!doctype html>
   .s { font-weight:600 } .no_erp,.gravado,.ok { color:var(--ok) } .pronto { color:var(--info) }
   .divergente,.aguardando_pagamento,.pendente,.gravando { color:var(--warn) }
   button.gravar { border-color:var(--info); color:var(--info); font-weight:600 }
-  .bloqueado,.cancelado,.erro { color:var(--err) } .ignorado { color:var(--mut) }
+  .bloqueado,.cancelado,.erro,.divergente_nf { color:var(--err) } .ignorado,.nao_se_aplica { color:var(--mut) }
+  .enviado,.ja_no_ml { color:var(--ok) } .aguardando_ml { color:var(--warn) }
   pre { white-space:pre-wrap; word-break:break-word; background:var(--bg); padding:10px; border-radius:6px; font-size:12px; margin:0 }
   .mut { color:var(--mut) } #msg { color:var(--err); margin:8px 0 }
 </style>
@@ -50,6 +51,7 @@ export const PAINEL_HTML = /* html */ `<!doctype html>
   <div class="cards" id="cards"></div>
   <div class="tabs">
     <button data-aba="pedidos" class="ativo">Pedidos</button>
+    <button data-aba="nfs">NF-e → ML</button>
     <button data-aba="eventos">Eventos</button>
     <button data-aba="log">Log</button>
     <button id="recarregar">Recarregar</button>
@@ -88,7 +90,7 @@ async function carregar() {
       ["Eventos com erro", e.erro || 0], ["Último evento", dt(s.store.ultimoEventoEm) || "—"],
     ];
     $("#cards").innerHTML = cards.map(([t, v]) => '<div class="card"><b>' + esc(v) + "</b><span>" + esc(t) + "</span></div>").join("");
-    await ({ pedidos, eventos, log })[aba]();
+    await ({ pedidos, nfs, eventos, log })[aba]();
   } catch (err) { $("#msg").textContent = err.message; }
 }
 
@@ -103,6 +105,17 @@ async function pedidos() {
       '</td><td><button data-ver="' + esc(p.chave) + '">detalhe</button> <button data-proc="' + esc(p.order_ids.split(",")[0]) + '">reprocessar</button>' +
       (p.situacao === "pronto" && modo !== "sombra" ? ' <button class="gravar" data-gravar="' + esc(p.order_ids.split(",")[0]) + '" data-chave="' + esc(p.chave) +
         '" data-total="' + esc(brl(p.total)) + '">gravar no Sankhya</button>' : "") +
+      "</td></tr>").join("") + "</tbody></table>";
+}
+
+async function nfs() {
+  const d = await api("/api/nfs");
+  $("#conteudo").innerHTML = '<p class="mut" style="padding:8px 12px;margin:0">Envio do XML: modo <b>' + esc(d.xmlModo) +
+    '</b> · <button id="varrer">varrer NFs faturadas agora</button></p>' +
+    "<table><thead><tr><th>Atualizado</th><th>Pedido ML</th><th>NUNOTA NF</th><th>Envio</th><th>Logística</th><th>Status</th><th>Detalhe</th><th></th></tr></thead><tbody>" +
+    d.nfs.map((n) => "<tr><td>" + dt(n.atualizado_em) + "</td><td>" + esc(n.chave) + "</td><td>" + esc(n.nunota_nf) + "</td><td>" + esc(n.shipment_id ?? "—") +
+      "</td><td>" + esc(n.logistica ?? "—") + '</td><td class="s ' + esc(n.status) + '">' + esc(n.status) + '</td><td class="mut">' + esc(n.detalhe ?? "") +
+      "</td><td>" + (n.status === "pronto" || n.status === "erro" ? '<button class="gravar" data-nf="' + esc(n.chave) + '">enviar XML</button>' : "") +
       "</td></tr>").join("") + "</tbody></table>";
 }
 
@@ -140,6 +153,14 @@ document.addEventListener("click", async (ev) => {
       b.disabled = true; b.textContent = "gravando...";
       const d = await api("/api/pedidos/" + b.dataset.gravar + "/gravar", { method: "POST" });
       alert("Gravado: NUNOTA " + (d.pedido.nunota ?? "?"));
+      return carregar();
+    }
+    if (b.id === "varrer") { b.disabled = true; b.textContent = "varrendo..."; await api("/api/nfs/varrer", { method: "POST" }); return carregar(); }
+    if (b.dataset.nf) {
+      if (!confirm("Enviar ao Mercado Livre o XML da NF do pedido " + b.dataset.nf + "? Isso libera a etiqueta.")) return;
+      b.disabled = true; b.textContent = "enviando...";
+      const d = await api("/api/nfs/" + b.dataset.nf + "/enviar", { method: "POST" });
+      alert("Resultado: " + d.status + (d.nf && d.nf.detalhe ? " — " + d.nf.detalhe : ""));
       return carregar();
     }
     if (b.dataset.proc) { b.disabled = true; await api("/api/pedidos/" + b.dataset.proc + "/processar", { method: "POST" }); return carregar(); }

@@ -188,3 +188,23 @@ test("parceiro com rua a criar: CODEND vazio, bairro/cidade resolvidos", () => {
   assert.equal(r.campos!.CODCID, "4442");
   assert.match(montarParceiro(billing(), { CODEND: null, CODBAI: 6, CODCID: 1 }).bloqueio!, /rua/);
 });
+
+// XML ILUSTRATIVO — estrutura de nfeProc, dados inventados.
+const nfe = (cStat = "100", mod = "55") =>
+  `<?xml version="1.0" encoding="UTF-8"?><nfeProc xmlns="http://www.portalfiscal.inf.br/nfe" versao="4.00">` +
+  `<NFe><infNFe Id="NFe35260900000000000100550010000008901000000001"><ide><mod>${mod}</mod><serie>1</serie><nNF>890</nNF></ide>` +
+  `<emit><CNPJ>00000000000100</CNPJ></emit></infNFe></NFe><protNFe versao="4.00"><infProt><chNFe>35260900000000000100550010000008901000000001</chNFe>` +
+  `<cStat>${cStat}</cStat></infProt></protNFe></nfeProc>`;
+
+test("valida nfeProc autorizada modelo 55", async () => {
+  const { validarNfeProc } = await import("../src/xml.ts");
+  const i = validarNfeProc(nfe());
+  assert.equal(i.chave, "35260900000000000100550010000008901000000001");
+  assert.equal(i.numero, "890");
+  assert.equal(i.serie, "1");
+  assert.equal(i.cnpjEmitente, "00000000000100");
+  assert.throws(() => validarNfeProc(nfe("110")), /cStat 110/);
+  assert.throws(() => validarNfeProc(nfe("100", "65")), /modelo 65/);
+  assert.throws(() => validarNfeProc(nfe().slice(0, -20)), /cortado/);
+  assert.throws(() => validarNfeProc("<NFe></NFe>"), /nfeProc/);
+});

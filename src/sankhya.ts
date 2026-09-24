@@ -180,3 +180,27 @@ export async function salvarEndereco(env: Env, nomeend: string, tipo: string | n
   const cod = Number(rb?.result?.[0]?.[0]);
   return Number.isFinite(cod) && cod > 0 ? cod : null;
 }
+
+/**
+ * XML autorizado da NF-e (TGFNFE.XMLENVCLI, CLOB com <nfeProc>, ~8 KB).
+ * Lido em fatias de 2.000 caracteres: VARCHAR2 no SQL tem teto de 4.000 bytes e
+ * o XML pode ter acento (multibyte).
+ */
+export async function lerXmlNfe(env: Env, nunota: number): Promise<string> {
+  if (!Number.isInteger(nunota) || nunota <= 0) throw new ErroDefinitivo(`NUNOTA inválido: ${nunota}`);
+  const tam = await consultar(env, `SELECT DBMS_LOB.GETLENGTH(XMLENVCLI) T FROM TGFNFE WHERE NUNOTA = ${nunota}`);
+  const total = Number(tam[0]?.T ?? 0);
+  if (!total) throw new ErroDefinitivo(`NF ${nunota} sem XML em TGFNFE.XMLENVCLI`);
+  const FATIA = 2000;
+  const partes: string[] = [];
+  for (let ini = 1; ini <= total; ini += FATIA * 5) {
+    const cols = Array.from({ length: 5 }, (_, i) => ini + i * FATIA)
+      .filter((p) => p <= total)
+      .map((p, i) => `DBMS_LOB.SUBSTR(XMLENVCLI, ${FATIA}, ${p}) P${i}`);
+    const r = (await consultar(env, `SELECT ${cols.join(", ")} FROM TGFNFE WHERE NUNOTA = ${nunota}`))[0] ?? {};
+    for (let i = 0; i < cols.length; i++) partes.push(String(r[`P${i}`] ?? ""));
+  }
+  const xml = partes.join("");
+  if (xml.length !== total) throw new ErroDefinitivo(`XML da NF ${nunota} lido com ${xml.length} de ${total} caracteres`);
+  return xml;
+}

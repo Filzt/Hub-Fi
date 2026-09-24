@@ -141,3 +141,43 @@ export async function meliGet<T = unknown>(
 }
 
 export { tokenStub };
+
+/**
+ * POST/PUT autenticado com corpo arbitrário (XML, multipart). Devolve status e
+ * corpo sem lançar em 4xx: quem chama decide (ex.: 4xx de "já existe nota").
+ * 5xx/429/rede lançam ErroTemporario.
+ */
+export async function meliEnviar(
+  env: Env,
+  metodo: "POST" | "PUT",
+  caminho: string,
+  corpo: BodyInit,
+  contentType?: string,
+): Promise<{ status: number; corpo: any }> {
+  const stub = tokenStub(env);
+  for (let tentativa = 0; tentativa < 2; tentativa++) {
+    let token: string;
+    try {
+      token = tentativa === 0 ? await stub.accessToken() : await stub.forcarRenovacao();
+    } catch (e) {
+      const msg = (e as Error).message;
+      if (/não semeado|recusada: HTTP 4/.test(msg)) throw new ErroDefinitivo(msg);
+      throw new ErroTemporario(msg);
+    }
+    const headers: Record<string, string> = { Authorization: `Bearer ${token}`, accept: "application/json" };
+    if (contentType) headers["Content-Type"] = contentType; // multipart: o fetch define o boundary
+    let r: Response;
+    try {
+      r = await fetch(`${env.MELI_API}${caminho}`, { method: metodo, headers, body: corpo, signal: AbortSignal.timeout(TIMEOUT_MS.meli * 2) });
+    } catch (e) {
+      throw new ErroTemporario(`ML ${metodo} ${caminho}: falha de rede/timeout (${(e as Error).message})`);
+    }
+    if (r.status === 401 && tentativa === 0) continue;
+    const texto = await r.text();
+    let json: any = texto;
+    try { json = JSON.parse(texto); } catch { /* corpo não-JSON */ }
+    if (r.status === 429 || r.status >= 500) throw new ErroTemporario(`ML ${metodo} ${caminho}: HTTP ${r.status} ${texto.slice(0, 200)}`);
+    return { status: r.status, corpo: json };
+  }
+  throw new ErroDefinitivo(`ML ${metodo} ${caminho}: 401 mesmo após renovar o token`);
+}

@@ -3,6 +3,7 @@ import type { Store } from "./store.ts";
 
 export interface Env {
   MODO: string;
+  XML_MODO: string; // manual (só pelo painel) | automatico (cron envia)
   MELI_API: string;
   MELI_USER_ID: string;
   SANKHYA_API: string;
