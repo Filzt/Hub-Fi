@@ -162,3 +162,21 @@ export async function confirmarNota(env: Env, nunota: number): Promise<void> {
     nota: { NUNOTA: { $: String(nunota) }, confirmacaoCentralNota: "true", ehPedidoWeb: "false" },
   });
 }
+
+/**
+ * Cria um logradouro na TSIEND (entidade "Endereco", conferida em TDDINS), como a
+ * Base fazia para CEP único de cidade. Devolve o CODEND se vier na resposta.
+ */
+export async function salvarEndereco(env: Env, nomeend: string, tipo: string | null): Promise<number | null> {
+  const campos: Record<string, string> = { NOMEEND: nomeend };
+  if (tipo) campos.TIPO = tipo;
+  const nomes = Object.keys(campos);
+  const rb = await servico(env, "mge", "DatasetSP.save", {
+    entityName: "Endereco",
+    standAlone: false,
+    fields: ["CODEND", ...nomes],
+    records: [{ values: Object.fromEntries(nomes.map((k, i) => [String(i + 1), campos[k]])) }],
+  });
+  const cod = Number(rb?.result?.[0]?.[0]);
+  return Number.isFinite(cod) && cod > 0 ? cod : null;
+}

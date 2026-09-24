@@ -8,6 +8,8 @@ import {
   freteVendedorCentavos,
   montarNota,
   montarParceiro,
+  separarLogradouro,
+  siglaUf,
   skuValido,
   type OrderML,
 } from "../src/nota.ts";
@@ -167,4 +169,22 @@ test("o JavaScript do painel é válido (template literal não pode quebrar stri
   const { PAINEL_HTML } = await import("../src/painel.ts");
   const js = PAINEL_HTML.split("<script>")[1].split("</script>")[0];
   assert.doesNotThrow(() => new Function(js));
+});
+
+test("separa tipo e nome do logradouro", () => {
+  assert.deepEqual(separarLogradouro("Avenida Brasil"), { tipo: "Av", nome: "Brasil" });
+  assert.deepEqual(separarLogradouro("R. Coronel Godinho"), { tipo: "R", nome: "Coronel Godinho" });
+  assert.deepEqual(separarLogradouro("Praça  da Sé"), { tipo: "Pc", nome: "da Sé" });
+  assert.deepEqual(separarLogradouro("Coronel Godinho"), { tipo: null, nome: "Coronel Godinho" });
+  assert.deepEqual(separarLogradouro("Rua"), { tipo: null, nome: "Rua" });
+  assert.equal(siglaUf("BR-MT"), "MT");
+  assert.equal(siglaUf("X"), "");
+});
+
+test("parceiro com rua a criar: CODEND vazio, bairro/cidade resolvidos", () => {
+  const r = montarParceiro(billing(), { CODEND: null, CODBAI: 45993, CODCID: 4442, enderecoNovo: { NOMEEND: "RUA NOVA", TIPO: "R" } });
+  assert.equal(r.bloqueio, null);
+  assert.equal(r.campos!.CODEND, "");
+  assert.equal(r.campos!.CODCID, "4442");
+  assert.match(montarParceiro(billing(), { CODEND: null, CODBAI: 6, CODCID: 1 }).bloqueio!, /rua/);
 });

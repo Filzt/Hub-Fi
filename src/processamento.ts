@@ -26,11 +26,13 @@ import {
   montarParceiro,
   type OrderML,
   reais,
+  separarLogradouro,
+  siglaUf,
   skuValido,
   soDigitos,
   sqlTexto,
 } from "./nota.ts";
-import { confirmarNota, consultar, incluirNota, salvarParceiro } from "./sankhya.ts";
+import { confirmarNota, consultar, incluirNota, salvarEndereco, salvarParceiro } from "./sankhya.ts";
 import { type Evento, type Pedido, storeStub } from "./store.ts";
 import { type Env, ErroDefinitivo, ErroTemporario } from "./tipos.ts";
 
@@ -38,6 +40,7 @@ interface Analise {
   pedido: Pedido;
   entrada: EntradaNota | null; // codparc = 0 quando o parceiro ainda vai ser criado
   parceiroNovo: Record<string, string> | null;
+  enderecoNovo: { NOMEEND: string; TIPO: string | null } | null;
   documento: string;
   observacoes: string[];
 }
@@ -107,22 +110,20 @@ export async function analisarPedido(env: Env, orderId: string): Promise<Analise
 
   let codparc: number | null = null;
   let parceiroNovo: Record<string, string> | null = null;
+  let enderecoNovo: { NOMEEND: string; TIPO: string | null } | null = null;
   if (!documento) {
     bloqueio ||= "sem CPF/CNPJ do comprador no billing-info";
   } else {
     codparc = await buscarParceiro(env, documento);
     if (!codparc) {
-      const cepDig = soDigitos(billing?.address?.zip_code);
-      const linhas = cepDig.length === 8
-        ? await consultar(env, `SELECT CODEND, CODBAI, CODCID FROM TSICEP WHERE CEP = ${sqlTexto(cepDig)}`)
-        : [];
-      const cep: CepSankhya | null = linhas.length
-        ? { CODEND: Number(linhas[0].CODEND), CODBAI: Number(linhas[0].CODBAI), CODCID: Number(linhas[0].CODCID) }
-        : null;
+      const cep = await resolverEndereco(env, billing, alertas);
       const r = montarParceiro(billing, cep);
       alertas.push(...r.alertas);
       if (r.bloqueio) bloqueio ||= `parceiro novo: ${r.bloqueio}`;
-      else parceiroNovo = r.campos;
+      else {
+        parceiroNovo = r.campos;
+        enderecoNovo = cep?.CODEND == null ? cep?.enderecoNovo ?? null : null;
+      }
     }
   }
 
@@ -177,13 +178,14 @@ export async function analisarPedido(env: Env, orderId: string): Promise<Analise
       alertas,
       comparacao,
       parceiroNovo: parceiroNovo ? { ...parceiroNovo, CGC_CPF: mascarar(parceiroNovo.CGC_CPF) } : null,
+      enderecoNovo,
       nfAutorizada,
       itens: p.itens,
       erp: docsErp,
     }),
     atualizado_em: Date.now(),
   };
-  return { pedido, entrada, parceiroNovo, documento, observacoes };
+  return { pedido, entrada, parceiroNovo, enderecoNovo, documento, observacoes };
 }
 
 /** Analisa, salva e — em modo automático — grava o que estiver pronto. */
@@ -239,7 +241,12 @@ export async function gravarPedido(env: Env, orderId: string, analise?: Analise)
       try {
         codparc = (await buscarParceiro(env, a.documento)) ?? 0;
         if (!codparc) {
-          const criado = await salvarParceiro(env, a.parceiroNovo);
+          const campos = { ...a.parceiroNovo };
+          if (!campos.CODEND) {
+            if (!a.enderecoNovo) throw new ErroDefinitivo("parceiro sem CODEND e sem endereço para criar");
+            campos.CODEND = String(await garantirEndereco(env, a.enderecoNovo, chave));
+          }
+          const criado = await salvarParceiro(env, campos);
           // Confirma pela leitura: vale mesmo se a resposta vier sem a chave.
           codparc = (await buscarParceiro(env, a.documento)) ?? criado ?? 0;
           if (!codparc) throw new ErroDefinitivo("parceiro gravado, mas não encontrado pelo CPF/CNPJ");
@@ -334,6 +341,88 @@ export async function confirmarPedidoErp(env: Env, nunota: number): Promise<{ ok
 }
 
 // ---------------------------------------------------------------------------
+
+const BAIRRO_CENTRO = 6; // TSIBAI "Centro"
+const BAIRRO_OUTRO = 45993; // TSIBAI "OUTRO" — o que a Base usava quando não achava
+
+/** Comparação sem acento e sem caixa no Oracle. */
+const semAcento = (coluna: string, valor: string) =>
+  `NLSSORT(${coluna}, 'NLS_SORT=BINARY_AI') = NLSSORT(${sqlTexto(valor)}, 'NLS_SORT=BINARY_AI')`;
+const textoLimpo = (v: unknown) => String(v ?? "").replace(/[\u0000-\u001f]/g, " ").replace(/\s+/g, " ").trim();
+
+/**
+ * Resolve CODEND/CODBAI/CODCID do endereço do comprador.
+ *   1. TSICEP pelo CEP (caso comum);
+ *   2. CEP único de cidade: cidade por nome + UF (tem de ser única), bairro por nome
+ *      (senão Centro/OUTRO, como a Base), rua por nome na TSIEND — se não existir,
+ *      devolve enderecoNovo para ser criado só na gravação.
+ */
+async function resolverEndereco(env: Env, billing: BillingML | null, alertas: string[]): Promise<CepSankhya | null> {
+  const a = billing?.address;
+  const cepDig = soDigitos(a?.zip_code);
+  if (cepDig.length === 8) {
+    const l = await consultar(env, `SELECT CODEND, CODBAI, CODCID FROM TSICEP WHERE CEP = ${sqlTexto(cepDig)}`);
+    if (l.length) return { CODEND: Number(l[0].CODEND), CODBAI: Number(l[0].CODBAI), CODCID: Number(l[0].CODCID) };
+  }
+
+  const uf = siglaUf(a?.state?.code);
+  const cidade = textoLimpo(a?.city_name);
+  if (!uf || !cidade) return null;
+  const cids = await consultar(
+    env,
+    `SELECT C.CODCID FROM TSICID C JOIN TSIUFS U ON U.CODUF = C.UF WHERE U.UF = ${sqlTexto(uf)} AND ${semAcento("C.NOMECID", cidade)}`,
+  );
+  if (cids.length !== 1) {
+    alertas.push(`cidade "${cidade}/${uf}" ${cids.length ? "ambígua" : "não encontrada"} na TSICID`);
+    return null;
+  }
+  const codcid = Number(cids[0].CODCID);
+
+  const bairro = textoLimpo(a?.neighborhood);
+  let codbai = BAIRRO_OUTRO;
+  if (bairro) {
+    const b = await consultar(env, `SELECT MIN(CODBAI) CODBAI FROM TSIBAI WHERE ${semAcento("NOMEBAI", bairro)}`);
+    if (b[0]?.CODBAI != null) codbai = Number(b[0].CODBAI);
+    else if (/^centro$/i.test(bairro.normalize("NFD").replace(/[\u0300-\u036f]/g, ""))) codbai = BAIRRO_CENTRO;
+  }
+  if (codbai === BAIRRO_OUTRO) alertas.push(`bairro "${bairro || "(vazio)"}" não encontrado — usado OUTRO, como a Base`);
+
+  const { tipo, nome } = separarLogradouro(textoLimpo(a?.street_name));
+  if (!nome) return null;
+  if (nome.length > 60) {
+    alertas.push(`rua com ${nome.length} caracteres (máx. 60 na TSIEND)`);
+    return null;
+  }
+  const ruas = await consultar(
+    env,
+    `SELECT CODEND, TIPO FROM TSIEND WHERE ${semAcento("NOMEEND", nome)} ORDER BY CODEND FETCH FIRST 50 ROWS ONLY`,
+  );
+  const escolhida = ruas.find((r) => tipo && String(r.TIPO ?? "").toUpperCase() === tipo.toUpperCase()) ?? ruas[0];
+  alertas.push(`CEP ${cepDig} é de cidade (fora da TSICEP): endereço resolvido por nome`);
+  if (escolhida) return { CODEND: Number(escolhida.CODEND), CODBAI: codbai, CODCID: codcid };
+  alertas.push(`rua "${nome}" não existe na TSIEND — será criada na gravação`);
+  return { CODEND: null, CODBAI: codbai, CODCID: codcid, enderecoNovo: { NOMEEND: nome.toUpperCase(), TIPO: tipo } };
+}
+
+/** Acha ou cria o logradouro (trava por nome evita duplicata entre pedidos simultâneos). */
+async function garantirEndereco(env: Env, e: { NOMEEND: string; TIPO: string | null }, chave: string): Promise<number> {
+  const store = storeStub(env);
+  const trava = `endereco:${e.NOMEEND}`;
+  if (!(await store.travar(trava, 2 * 60_000))) throw new ErroTemporario(`criação do endereço já em andamento`);
+  try {
+    const ler = async () =>
+      (await consultar(env, `SELECT MAX(CODEND) CODEND FROM TSIEND WHERE ${semAcento("NOMEEND", e.NOMEEND)}`))[0]?.CODEND;
+    const existente = await ler();
+    if (existente != null) return Number(existente);
+    const criado = await salvarEndereco(env, e.NOMEEND, e.TIPO);
+    const cod = (await ler()) ?? criado;
+    if (cod == null) throw new ErroDefinitivo("endereço gravado, mas não encontrado na TSIEND");
+    await store.log("info", chave, `endereço criado na TSIEND: CODEND ${cod} (${e.TIPO ?? "sem tipo"} ${e.NOMEEND})`);
+    return Number(cod);
+  } finally {
+    await store.destravar(trava);
+  }
+}
 
 async function buscarParceiro(env: Env, documento: string): Promise<number | null> {
   const r = await consultar(env, `SELECT CODPARC FROM TGFPAR WHERE CGC_CPF = ${sqlTexto(documento)}`);

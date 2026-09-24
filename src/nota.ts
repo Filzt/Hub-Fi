@@ -233,14 +233,44 @@ export interface BillingML {
     street_number?: string | null;
     comment?: string | null;
     zip_code?: string | null;
+    city_name?: string | null;
+    neighborhood?: string | null;
+    state?: { code?: string | null } | null;
   } | null;
 }
 
-/** Linha da TSICEP: o Sankhya tem a base nacional de CEP (1,47 mi, todos com CODEND). */
+/**
+ * Endereço resolvido no Sankhya. Pela TSICEP (base nacional, 1,47 mi CEPs) vem tudo;
+ * CEP único de cidade (termina em 000) não está lá e é resolvido por nome — e, se a
+ * rua não existir na TSIEND, CODEND fica null e `enderecoNovo` diz o que criar.
+ */
 export interface CepSankhya {
-  CODEND: number;
+  CODEND: number | null;
   CODBAI: number;
   CODCID: number;
+  enderecoNovo?: { NOMEEND: string; TIPO: string | null } | null;
+}
+
+// Tipos de logradouro da TSIEND (os mais usados: R, Av, Tv, Pc, Al, Est-Mun, Bc, Vie, Rod).
+const TIPOS_LOGRADOURO: Record<string, string> = {
+  RUA: "R", R: "R", AVENIDA: "Av", AV: "Av", AVN: "Av", TRAVESSA: "Tv", TV: "Tv", PRACA: "Pc", PC: "Pc",
+  ALAMEDA: "Al", AL: "Al", ESTRADA: "Est-Mun", EST: "Est-Mun", RODOVIA: "Rod", ROD: "Rod",
+  BECO: "Bc", VIELA: "Vie", VILA: "Vl", LARGO: "Lg", QUADRA: "Qd",
+};
+
+/** "Avenida Brasil" → { tipo: "Av", nome: "Brasil" }. Sem tipo reconhecido, tipo = null. */
+export function separarLogradouro(rua: string): { tipo: string | null; nome: string } {
+  const limpo = String(rua ?? "").trim().replace(/\s+/g, " ");
+  const [primeira, ...resto] = limpo.split(" ");
+  const chave = (primeira ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().replace(/[^A-Z]/g, "");
+  const tipo = TIPOS_LOGRADOURO[chave] ?? null;
+  return tipo && resto.length ? { tipo, nome: resto.join(" ") } : { tipo: null, nome: limpo };
+}
+
+/** "BR-SP" → "SP". */
+export function siglaUf(code: string | null | undefined): string {
+  const s = String(code ?? "").toUpperCase().replace(/^BR-/, "");
+  return /^[A-Z]{2}$/.test(s) ? s : "";
 }
 
 // Tamanhos de TGFPAR (ALL_TAB_COLUMNS, 24/09/2026).
@@ -272,7 +302,8 @@ export function montarParceiro(
 
   const cepDig = soDigitos(b.address?.zip_code);
   if (cepDig.length !== TAM.CEP) return falha(`CEP inválido no billing-info (${cepDig || "vazio"})`);
-  if (!cep) return falha(`CEP ${cepDig} não encontrado na TSICEP`);
+  if (!cep) return falha(`CEP ${cepDig} não encontrado na TSICEP nem por cidade/rua`);
+  if (cep.CODEND == null && !cep.enderecoNovo) return falha("rua não encontrada e sem dados para criar");
 
   let numero = String(b.address?.street_number ?? "").trim();
   let complemento = String(b.address?.comment ?? "").trim().replace(/\s+/g, " ");
@@ -293,7 +324,8 @@ export function montarParceiro(
     TIPPESSOA: tippessoa,
     CGC_CPF: doc,
     CEP: cepDig,
-    CODEND: String(cep.CODEND),
+    // CODEND vazio = endereço será criado na gravação (cep.enderecoNovo)
+    CODEND: cep.CODEND == null ? "" : String(cep.CODEND),
     CODBAI: String(cep.CODBAI),
     CODCID: String(cep.CODCID),
     NUMEND: numero,
