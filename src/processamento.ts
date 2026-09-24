@@ -153,7 +153,11 @@ export async function analisarPedido(env: Env, orderId: string): Promise<Analise
   } else if (tem1090) {
     situacao = comparacao?.divergencias.length ? "divergente" : "no_erp";
   } else if (!pago) situacao = "aguardando_pagamento";
-  else if (bloqueio || !entrada) situacao = "bloqueado";
+  else if (p.itens.some((i) => i.comissaoCentavos <= 0)) {
+    // Na notificação da venda o ML às vezes ainda não calculou o sale_fee (visto em
+    // 24/09/2026: 0,00 no 1º aviso, 219,05 no seguinte). Não grava com comissão zerada.
+    situacao = "aguardando_comissao";
+  } else if (bloqueio || !entrada) situacao = "bloqueado";
   else situacao = "pronto";
 
   const pedido: Pedido = {

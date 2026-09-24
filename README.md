@@ -25,6 +25,7 @@ Trocar de modo = editar o `wrangler.toml` e dar push (vira deploy).
 | `bloqueado` | falta dado: SKU sem cadastro/ambíguo, CPF/CNPJ, CEP fora da TSICEP, IE > 16 |
 | `cancelado` | cancelado no ML; alerta se existe 1090 ou NF 1130 autorizada |
 | `aguardando_pagamento` | order ainda não `paid` |
+| `aguardando_comissao` | ML ainda não calculou o `sale_fee` (acontece no 1º aviso da venda); a próxima notificação reavalia |
 
 Contra duplicata: trava por pedido e por CPF/CNPJ no Durable Object, releitura da
 `TGFCAB` pela `OBSERVACAO` dentro da trava, e confirmação pela leitura quando a
