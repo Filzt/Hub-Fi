@@ -30,7 +30,7 @@ import {
   soDigitos,
   sqlTexto,
 } from "./nota.ts";
-import { consultar, incluirNota, salvarParceiro } from "./sankhya.ts";
+import { confirmarNota, consultar, incluirNota, salvarParceiro } from "./sankhya.ts";
 import { type Evento, type Pedido, storeStub } from "./store.ts";
 import { type Env, ErroDefinitivo, ErroTemporario } from "./tipos.ts";
 
@@ -259,6 +259,14 @@ export async function gravarPedido(env: Env, orderId: string, analise?: Analise)
 
     await store.marcarGravacao(chave, "gravado", { nunota });
     await store.log("info", chave, `pedido gravado no Sankhya: NUNOTA ${nunota}, CODPARC ${codparc}, total ${reais(Math.round(a.pedido.total * 100))}`);
+
+    // Confirmação separada: o pedido já existe; se confirmar falhar, fica registrado
+    // e pode ser refeito pelo painel sem regravar nada.
+    const conf = await confirmarPedidoErp(env, nunota);
+    if (!conf.ok) {
+      await store.marcarGravacao(chave, "gravado", { nunota });
+      await store.log("aviso", chave, `NUNOTA ${nunota} gravado mas NÃO confirmado: ${conf.motivo}`);
+    }
     const final = await analisarPedido(env, orderId); // reflete o pedido recém-criado
     await store.salvarPedido(final.pedido);
     return (await store.pedido(chave)) as Pedido;
@@ -292,6 +300,33 @@ export async function processarEvento(env: Env, ev: Evento): Promise<void> {
     await store.concluirEvento(ev.id, { ok: false, temporario, erro: erro.message });
     await store.log("erro", m[1], `${erro.name}: ${erro.message}`);
   }
+}
+
+/**
+ * Confirma um pedido 1090 já existente (STATUSNOTA A → L) e confere pela leitura.
+ * Só aceita pedido 1090 cuja OBSERVACAO comece com número do ML (16 dígitos).
+ */
+export async function confirmarPedidoErp(env: Env, nunota: number): Promise<{ ok: boolean; status: string | null; motivo?: string }> {
+  if (env.MODO !== "manual" && env.MODO !== "automatico") {
+    return { ok: false, status: null, motivo: `gravação desligada (MODO=${env.MODO})` };
+  }
+  const ler = async () =>
+    (await consultar(env, `SELECT CODTIPOPER, STATUSNOTA, TRIM(OBSERVACAO) OBS FROM TGFCAB WHERE NUNOTA = ${Number(nunota)}`))[0];
+  const antes = await ler();
+  if (!antes) return { ok: false, status: null, motivo: "NUNOTA não encontrado" };
+  if (Number(antes.CODTIPOPER) !== 1090 || !/^\d{16}/.test(String(antes.OBS ?? ""))) {
+    return { ok: false, status: String(antes.STATUSNOTA), motivo: "não é pedido 1090 do ML" };
+  }
+  if (antes.STATUSNOTA === "L") return { ok: true, status: "L" };
+  let erro = "";
+  try {
+    await confirmarNota(env, nunota);
+  } catch (e) {
+    erro = (e as Error).message;
+  }
+  const depois = await ler();
+  const status = depois ? String(depois.STATUSNOTA) : null;
+  return status === "L" ? { ok: true, status } : { ok: false, status, motivo: erro || `STATUSNOTA continua ${status}` };
 }
 
 // ---------------------------------------------------------------------------

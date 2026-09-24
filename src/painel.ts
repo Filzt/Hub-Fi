@@ -136,9 +136,7 @@ document.addEventListener("click", async (ev) => {
         "</pre><p class=mut>incluirNota montado (CODPARC 0 = parceiro será criado na gravação):</p><pre>" + esc(nota) + "</pre></td></tr>");
     }
     if (b.dataset.gravar) {
-      if (!confirm("Gravar no Sankhya o pedido " + b.dataset.chave + " (" + b.dataset.total + ")?
-
-Cria o parceiro se for comprador novo e o pedido 1090.")) return;
+      if (!confirm("Gravar no Sankhya o pedido " + b.dataset.chave + " (" + b.dataset.total + ")? Cria o parceiro se for comprador novo, inclui e confirma o pedido 1090.")) return;
       b.disabled = true; b.textContent = "gravando...";
       const d = await api("/api/pedidos/" + b.dataset.gravar + "/gravar", { method: "POST" });
       alert("Gravado: NUNOTA " + (d.pedido.nunota ?? "?"));

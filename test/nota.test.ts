@@ -162,3 +162,9 @@ test("parceiro bloqueia sem CEP na TSICEP ou documento inválido", () => {
   assert.match(montarParceiro(billing(), null).bloqueio!, /TSICEP/);
   assert.match(montarParceiro(billing({ identification: { type: "CPF", number: "123" } }), cep).bloqueio!, /documento/);
 });
+
+test("o JavaScript do painel é válido (template literal não pode quebrar string)", async () => {
+  const { PAINEL_HTML } = await import("../src/painel.ts");
+  const js = PAINEL_HTML.split("<script>")[1].split("</script>")[0];
+  assert.doesNotThrow(() => new Function(js));
+});

@@ -149,3 +149,16 @@ export async function incluirNota(env: Env, corpo: { requestBody: unknown }): Pr
   const nunota = Number(rb?.pk?.NUNOTA?.$ ?? rb?.pk?.NUNOTA);
   return Number.isFinite(nunota) && nunota > 0 ? nunota : null;
 }
+
+/**
+ * Confirma um pedido (STATUSNOTA A → L), como a Base fazia depois de incluir.
+ * ATENÇÃO: CACSP.confirmarNota NÃO está na lista oficial de serviços do gateway
+ * (conferido em 24/09/2026 — a doc só mostra a confirmação via extensão Java).
+ * Por isso o chamador confirma o resultado relendo TGFCAB.STATUSNOTA.
+ */
+export async function confirmarNota(env: Env, nunota: number): Promise<void> {
+  if (!Number.isInteger(nunota) || nunota <= 0) throw new ErroDefinitivo(`NUNOTA inválido: ${nunota}`);
+  await servico(env, "mgecom", "CACSP.confirmarNota", {
+    nota: { NUNOTA: { $: String(nunota) }, confirmacaoCentralNota: "true", ehPedidoWeb: "false" },
+  });
+}
