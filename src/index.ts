@@ -115,6 +115,18 @@ export default {
     const url = new URL(req.url);
     try {
       if (url.pathname === "/ml/webhook" && req.method === "POST") return await webhook(req, env, ctx);
+      if (url.pathname === "/config" && req.method === "GET") {
+        // Diagnóstico público: só diz QUAIS secrets existem e um prefixo do hash do
+        // ADMIN_TOKEN (32 bits de um SHA-256) para conferir com o cofre. Nenhum valor.
+        const nomes = ["MELI_CLIENT_ID", "MELI_CLIENT_SECRET", "SANKHYA_CLIENT_ID",
+          "SANKHYA_CLIENT_SECRET", "SANKHYA_XTOKEN", "ADMIN_TOKEN"] as const;
+        const presentes = Object.fromEntries(nomes.map((n) => [n, Boolean(env[n])]));
+        const hash = env.ADMIN_TOKEN
+          ? [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(env.ADMIN_TOKEN)))]
+              .slice(0, 4).map((b) => b.toString(16).padStart(2, "0")).join("")
+          : null;
+        return json({ modo: env.MODO, secrets: presentes, adminTokenSha256Prefixo: hash });
+      }
       if (url.pathname.startsWith("/api/")) return await rotaApi(req, env, url);
       if (url.pathname === "/" || url.pathname === "/painel") {
         return new Response(PAINEL_HTML, {
