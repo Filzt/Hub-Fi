@@ -32,7 +32,7 @@ crons = ["*/10 * * * *"]
 
 [vars]
 MODO = "automatico" # sombra | manual (grava só pelo botão) | automatico (grava pelo webhook)
-XML_MODO = "manual" # manual (envio do XML só pelo painel) | automatico (cron envia sozinho)
+XML_MODO = "automatico" # manual (envio do XML só pelo painel) | automatico (cron envia sozinho)
 CANCELAMENTO_MODO = "automatico" # desligado | manual | automatico — cancela no Sankhya o 1090 NÃO faturado de venda cancelada no ML
 MELI_API = "https://api.mercadolibre.com"
 MELI_USER_ID = "3474041384"
