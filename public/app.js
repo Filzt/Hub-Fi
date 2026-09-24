@@ -38,6 +38,7 @@ function limparErro() { $("#msg").textContent = ""; }
 /* ------------------------------------------------------------------ roteamento */
 const MODULOS = {
   pedidos: { titulo: "Pedidos", render: renderPedidos },
+  expedicao: { titulo: "Expedição", render: renderExpedicao },
   produtos: { titulo: "Produtos", render: renderProdutos },
   precificacao: { titulo: "Precificação", render: renderPrecificacao },
   integracao: { titulo: "Integração", render: renderIntegracao },
@@ -45,7 +46,8 @@ const MODULOS = {
 
 function rota() {
   const [mod, sub] = (location.hash.replace(/^#/, "") || "pedidos").split("/");
-  return { mod: MODULOS[mod] ? mod : "pedidos", sub: sub || "visao" };
+  const m = MODULOS[mod] ? mod : "pedidos";
+  return { mod: m, sub: sub || (m === "integracao" ? "visao" : "") };
 }
 
 async function navegar() {
@@ -53,7 +55,9 @@ async function navegar() {
   $$("nav a[data-mod]").forEach((a) => a.classList.toggle("ativo", a.dataset.mod === mod));
   $("#sub-integracao").classList.toggle("aberto", mod === "integracao");
   $$("#sub-integracao a").forEach((a) => a.classList.toggle("ativo", mod === "integracao" && a.dataset.sub === sub));
-  $("#titulo").textContent = MODULOS[mod].titulo + (mod === "integracao" ? " · " + ({ visao: "Visão geral", nfs: "NF-e → ML", logs: "Logs", eventos: "Eventos" }[sub] || "") : "");
+  const subtitulo = mod === "integracao" ? ({ visao: "Visão geral", nfs: "NF-e → ML", logs: "Logs", eventos: "Eventos" }[sub] || "")
+    : mod === "precificacao" && sub === "ml" ? "Mercado Livre" : "";
+  $("#titulo").textContent = MODULOS[mod].titulo + (subtitulo ? " · " + subtitulo : "");
   limparErro();
   if (!token) { $("#conteudo").innerHTML = '<p class="vazio">Informe o token de acesso para carregar.</p>'; return; }
   $("#conteudo").innerHTML = '<p class="vazio">Carregando…</p>';
@@ -166,6 +170,99 @@ async function imprimirEtiquetas(ids) {
   navegar();
 }
 
+/* ------------------------------------------------------------------ Expedição */
+// Lista só as etiquetas liberadas (NF aceita pelo ML) e um campo para bipar.
+// O leitor manda o código + Enter: 1º Enter localiza, 2º Enter (ou o botão) imprime.
+// Aceita nº do pedido ML (pack ou order), nº do envio (código grande da etiqueta),
+// chave da NF (44 dígitos) ou número da NF.
+const expedicao = { lista: [], achado: null, ultimoBipe: "" };
+
+function casaBipe(e, codigo) {
+  const c = codigo.replace(/\D/g, "");
+  if (!c) return false;
+  const nf = nfDaChave(e.fiscal_key);
+  return [e.chave, e.envio_order, e.shipment_id, e.fiscal_key].concat(String(e.order_ids || "").split(","))
+    .some((v) => v && String(v) === c) || (nf && nf === String(Number(c)) && c.length <= 9);
+}
+
+async function renderExpedicao() {
+  const d = await api("/api/etiquetas");
+  expedicao.lista = d.etiquetas;
+  const prontas = d.etiquetas.filter((e) => e.substatus === "ready_to_print").length;
+  $("#conteudo").innerHTML =
+    '<div class="bipe"><label for="bipe">Bipar etiqueta</label><input id="bipe" inputmode="numeric" autocomplete="off" placeholder="leia o código do pedido">' +
+    '<button type="button" id="limpar-bipe">Limpar</button><button type="button" id="atualizar-exp">Atualizar lista</button>' +
+    '<span class="dica">Aceita nº do pedido do ML, nº do envio, chave ou número da NF. Enter localiza; Enter de novo imprime.</span></div>' +
+    '<div id="resultado-bipe"></div>' +
+    '<div class="cards"><div class="card"><b>' + prontas + '</b><span>Para imprimir</span></div><div class="card"><b>' + (d.etiquetas.length - prontas) + '</b><span>Já impressas (reimpressão)</span></div></div>' +
+    '<div class="painel"><table><thead><tr><th>Pedido ML</th><th>NF</th><th>Envio</th><th>Venda</th><th class="n">Total</th><th>Situação</th><th></th></tr></thead><tbody id="tb-exp"></tbody></table></div>';
+  desenharExpedicao();
+  const campo = $("#bipe");
+  campo.focus();
+  campo.addEventListener("keydown", async (ev) => {
+    if (ev.key !== "Enter") return;
+    ev.preventDefault();
+    const codigo = campo.value.trim();
+    try {
+      if (expedicao.achado && (!codigo || codigo === expedicao.ultimoBipe)) return imprimirExpedicao(expedicao.achado);
+      localizar(codigo);
+    } catch (e) { erro(e); }
+  });
+  $("#limpar-bipe").onclick = () => { expedicao.achado = null; expedicao.ultimoBipe = ""; campo.value = ""; desenharExpedicao(); campo.focus(); };
+  $("#atualizar-exp").onclick = async (e) => { e.target.disabled = true; await post("/api/etiquetas/atualizar"); navegar(); };
+}
+
+function localizar(codigo) {
+  limparErro();
+  expedicao.ultimoBipe = codigo;
+  const achados = expedicao.lista.filter((e) => casaBipe(e, codigo));
+  expedicao.achado = achados.length === 1 ? achados[0] : null;
+  const alvo = $("#resultado-bipe");
+  if (achados.length === 1) {
+    const e = achados[0];
+    alvo.innerHTML = '<div class="achado"><div><div class="mut">Pedido ML</div><div class="grande">' + esc(e.chave) + "</div></div>" +
+      '<div><div class="mut">NF</div><div class="grande">' + esc(nfDaChave(e.fiscal_key) || "—") + "</div></div>" +
+      '<div><div class="mut">Situação</div><div>' + (e.substatus === "ready_to_print" ? '<span class="tag info">para imprimir</span>' : '<span class="tag ok">já impressa ' + esc(dt(e.impresso_em)) + "</span>") + "</div></div>" +
+      '<button type="button" class="primario" id="imprimir-achado">' + (e.substatus === "printed" ? "Reimprimir" : "Imprimir") + " etiqueta (Enter)</button></div>";
+    $("#imprimir-achado").onclick = () => imprimirExpedicao(e).catch(erro);
+  } else {
+    alvo.innerHTML = '<div class="nao-achado">' + (achados.length ? achados.length + " etiquetas batem com esse código — use o número do envio." :
+      "Nenhuma etiqueta liberada para “" + esc(codigo) + "”. Confira se a NF já foi faturada e enviada ao ML, ou clique em Atualizar lista.") + "</div>";
+  }
+  desenharExpedicao();
+}
+
+function desenharExpedicao() {
+  const focoId = expedicao.achado && expedicao.achado.shipment_id;
+  const linhas = focoId ? expedicao.lista.filter((e) => e.shipment_id === focoId) : expedicao.lista;
+  $("#tb-exp").innerHTML = linhas.map((e) => '<tr class="' + (e.shipment_id === focoId ? "foco" : "") + '"><td><b>' + esc(e.chave || "—") + "</b></td><td>" +
+    esc(nfDaChave(e.fiscal_key) || "—") + "</td><td>" + esc(e.shipment_id) + "</td><td>" + esc(dtIso(e.data_ml)) + '</td><td class="n">' + brl(e.total) + "</td><td>" +
+    (e.substatus === "ready_to_print" ? '<span class="tag info">para imprimir</span>' : '<span class="tag ok">já impressa</span>') +
+    '</td><td><button type="button" data-exp="' + esc(e.shipment_id) + '">' + (e.substatus === "printed" ? "Reimprimir" : "Imprimir") + "</button></td></tr>").join("") ||
+    '<tr><td colspan="7" class="mut">Nenhuma etiqueta liberada agora.</td></tr>';
+}
+
+async function imprimirExpedicao(e) {
+  const r = await fetch("/api/etiquetas/baixar?formato=pdf&ids=" + encodeURIComponent(e.shipment_id), { headers: { Authorization: "Bearer " + token } });
+  if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.erro || "Falha HTTP " + r.status); }
+  const url = URL.createObjectURL(await r.blob());
+  // Imprime direto num iframe oculto; se o navegador bloquear, abre o PDF numa aba.
+  const quadro = document.createElement("iframe");
+  quadro.style.cssText = "position:absolute;width:0;height:0;border:0";
+  quadro.src = url;
+  quadro.onload = () => {
+    try { quadro.contentWindow.focus(); quadro.contentWindow.print(); } catch { window.open(url, "_blank"); }
+    setTimeout(() => { quadro.remove(); URL.revokeObjectURL(url); }, 120000);
+  };
+  document.body.appendChild(quadro);
+  e.substatus = "printed"; e.impresso_em = Date.now();
+  expedicao.achado = null; expedicao.ultimoBipe = "";
+  const campo = $("#bipe");
+  if (campo) { campo.value = ""; campo.focus(); }
+  $("#resultado-bipe").innerHTML = '<div class="achado"><span class="ok">Etiqueta do pedido ' + esc(e.chave) + " enviada para impressão.</span></div>";
+  desenharExpedicao();
+}
+
 /* ------------------------------------------------------------------ Produtos */
 async function renderProdutos() {
   const d = await api("/api/produtos");
@@ -209,7 +306,15 @@ async function renderProdutos() {
 /* ------------------------------------------------------------------ Precificação */
 const TIPOS = { gold_special: "Clássico", gold_pro: "Premium" };
 
-async function renderPrecificacao() {
+async function renderPrecificacao(sub) {
+  if (sub !== "ml") {
+    // Ante-tela: um card por marketplace (hoje só o Mercado Livre está integrado).
+    $("#conteudo").innerHTML = '<p class="mut" style="margin:0 0 12px">Escolha o marketplace para ver e alterar as réguas de preço.</p>' +
+      '<div class="marketplaces"><a class="mkt" href="#precificacao/ml"><img src="/logos/mercadolivre.webp" alt="Mercado Livre">' +
+      '<span>Réguas do Mercado Livre</span><span class="mut">Clássico e Premium</span></a>' +
+      '<div class="mkt breve" aria-disabled="true"><span>Outros marketplaces</span><span class="mut">entram aqui quando forem integrados</span></div></div>';
+    return;
+  }
   const d = await api("/api/reguas");
   const r = d.reguas;
   const cartao = (tipo) =>
@@ -220,7 +325,7 @@ async function renderPrecificacao() {
   const hist = (d.historico || []).map((h) => "<tr><td>" + esc(dt(h.em)) + "</td><td>" + esc(h.responsavel) + "</td><td>" +
     Object.keys(TIPOS).map((t) => esc(TIPOS[t]) + ": ×" + esc(h.reguas[t].fator) + " + " + brl(h.reguas[t].soma)).join("<br>") + "</td><td>" + esc(h.motivo || "") + "</td></tr>").join("");
   $("#conteudo").innerHTML =
-    '<div class="painel"><h3>Réguas vigentes</h3><p class="mut" style="margin:10px 12px 0">Preço no ML = preço de loja (tabela 0 do Sankhya) × multiplicador + acréscimo. ' +
+    '<p style="margin:0 0 10px"><a href="#precificacao">← Marketplaces</a></p><div class="painel"><h3>Réguas vigentes — Mercado Livre</h3><p class="mut" style="margin:10px 12px 0">Preço no ML = preço de loja (tabela 0 do Sankhya) × multiplicador + acréscimo. ' +
     "Vale para os anúncios com saldo. Mudanças acima de 25% num anúncio não são aplicadas automaticamente. Depois de salvar, o ML é atualizado em até ~2 min (15 anúncios por rodada).</p>" +
     '<div class="reguas">' + Object.keys(TIPOS).map(cartao).join("") + "</div>" +
     '<div class="form-linha"><label>Quem está alterando<input id="resp" maxlength="60" placeholder="seu nome"></label>' +
@@ -337,6 +442,10 @@ document.addEventListener("click", async (ev) => {
     if (b.id === "fechar-gaveta") { $("#gaveta").hidden = true; return; }
     if (b.dataset.ped) return abrirPedido(b.dataset.ped);
     if (b.dataset.imprimir) return imprimirEtiquetas(b.dataset.imprimir);
+    if (b.dataset.exp) {
+      const e = expedicao.lista.find((x) => x.shipment_id === b.dataset.exp);
+      if (e) return imprimirExpedicao(e);
+    }
     if (b.dataset.reabrir) { await post("/api/eventos/" + b.dataset.reabrir + "/reabrir"); return navegar(); }
     if (b.dataset.acao === "gravar") {
       if (!confirm("Gravar este pedido no Sankhya? Cria o parceiro se for comprador novo, inclui e confirma o pedido 1090.")) return;

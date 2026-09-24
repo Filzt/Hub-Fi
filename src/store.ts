@@ -228,7 +228,7 @@ export class Store extends DurableObject<Env> {
   listarEtiquetas() {
     return this.sql
       .exec(
-        `SELECT e.shipment_id, COALESCE(n.chave, e.chave) chave, e.status, e.substatus, e.logistica, e.atualizado_em, e.impresso_em,
+        `SELECT e.shipment_id, COALESCE(n.chave, e.chave) chave, e.chave envio_order, p.data_ml, e.status, e.substatus, e.logistica, e.atualizado_em, e.impresso_em,
                 n.fiscal_key, n.nunota_nf, p.total, p.order_ids
          FROM envios e
          LEFT JOIN nfs n ON n.shipment_id = e.shipment_id
