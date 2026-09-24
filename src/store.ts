@@ -114,6 +114,15 @@ export class Store extends DurableObject<Env> {
         ultima_acao TEXT,
         acao_em INTEGER
       );
+      CREATE TABLE IF NOT EXISTS envios (
+        shipment_id TEXT PRIMARY KEY,
+        chave TEXT,
+        status TEXT NOT NULL DEFAULT '',
+        substatus TEXT NOT NULL DEFAULT '',
+        logistica TEXT NOT NULL DEFAULT '',
+        atualizado_em INTEGER NOT NULL,
+        impresso_em INTEGER
+      );
       CREATE TABLE IF NOT EXISTS meta (
         chave TEXT PRIMARY KEY,
         valor TEXT
@@ -191,6 +200,47 @@ export class Store extends DurableObject<Env> {
   /** Resultado do cancelamento no ERP (texto curto: "cancelado: ...", "faturado: ..."). */
   marcarCancelamento(chave: string, texto: string): void {
     this.sql.exec(`UPDATE pedidos SET cancelamento = ?, cancelamento_em = ? WHERE chave = ?`, texto.slice(0, 500), Date.now(), chave);
+  }
+
+  salvarEnvio(e: { shipment_id: string; chave: string | null; status: string; substatus: string; logistica: string }): void {
+    this.sql.exec(
+      `INSERT INTO envios (shipment_id, chave, status, substatus, logistica, atualizado_em) VALUES (?,?,?,?,?,?)
+       ON CONFLICT(shipment_id) DO UPDATE SET chave = COALESCE(excluded.chave, envios.chave), status = excluded.status,
+         substatus = excluded.substatus, logistica = excluded.logistica, atualizado_em = excluded.atualizado_em`,
+      e.shipment_id, e.chave, e.status, e.substatus, e.logistica, Date.now(),
+    );
+  }
+
+  /** Envios das NFs conhecidas ainda não despachados, os mais desatualizados primeiro. */
+  enviosParaAtualizar(limite: number): string[] {
+    return this.sql
+      .exec<{ id: string }>(
+        `SELECT n.shipment_id id FROM nfs n LEFT JOIN envios e ON e.shipment_id = n.shipment_id
+         WHERE n.shipment_id IS NOT NULL AND n.status IN ('enviado','ja_no_ml')
+           AND (e.shipment_id IS NULL OR e.status IN ('ready_to_ship','pending','handling'))
+         ORDER BY COALESCE(e.atualizado_em, 0) ASC LIMIT ?`,
+        limite,
+      )
+      .toArray().map((r) => r.id);
+  }
+
+  /** Envios imprimíveis (ready_to_ship + ready_to_print/printed), com NF e pedido para exibir. */
+  listarEtiquetas() {
+    return this.sql
+      .exec(
+        `SELECT e.shipment_id, e.chave, e.status, e.substatus, e.logistica, e.atualizado_em, e.impresso_em,
+                n.fiscal_key, n.nunota_nf, p.total, p.order_ids
+         FROM envios e
+         LEFT JOIN nfs n ON n.shipment_id = e.shipment_id
+         LEFT JOIN pedidos p ON p.chave = COALESCE(n.chave, e.chave)
+         WHERE e.status = 'ready_to_ship' AND e.substatus IN ('ready_to_print','printed')
+         ORDER BY e.substatus DESC, e.atualizado_em DESC LIMIT 300`,
+      )
+      .toArray();
+  }
+
+  marcarImpressos(ids: string[]): void {
+    for (const id of ids) this.sql.exec(`UPDATE envios SET impresso_em = ? WHERE shipment_id = ?`, Date.now(), id);
   }
 
   meta(chave: string): string | null {

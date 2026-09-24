@@ -12,6 +12,7 @@
 //   3. se a resposta do incluirNota se perder (timeout), a confirmação é feita
 //      pela OBSERVACAO em vez de tentar de novo às cegas.
 
+import { atualizarEnvio } from "./etiquetas.ts";
 import { meliGet } from "./meli.ts";
 import {
   type BillingML,
@@ -297,6 +298,21 @@ export async function gravarPedido(env: Env, orderId: string, analise?: Analise)
 /** Processa um evento da fila e registra o resultado (ok / retry / erro definitivo). */
 export async function processarEvento(env: Env, ev: Evento): Promise<void> {
   const store = storeStub(env);
+  if (ev.topic === "shipments") {
+    const s = ev.resource.match(/\/shipments\/(\d+)/);
+    if (!s) {
+      await store.ignorarEvento(ev.id, `resource inesperado: ${ev.resource}`);
+      return;
+    }
+    try {
+      await atualizarEnvio(env, s[1]);
+      await store.concluirEvento(ev.id, { ok: true });
+    } catch (e) {
+      const erro = e as Error;
+      await store.concluirEvento(ev.id, { ok: false, temporario: !(erro instanceof ErroDefinitivo), erro: erro.message });
+    }
+    return;
+  }
   if (ev.topic !== "orders_v2") {
     await store.ignorarEvento(ev.id, "tópico ainda não processado nesta fase");
     return;

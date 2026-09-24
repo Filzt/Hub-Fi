@@ -5,6 +5,7 @@ import { tokenStub } from "./meli.ts";
 import { PAINEL_HTML } from "./painel.ts";
 import { cancelarNoErp, confirmarPedidoErp, gravarPedido, processarEvento, processarPedido } from "./processamento.ts";
 import { sincronizarEstoque } from "./estoque.ts";
+import { atualizarEnviosPendentes, baixarEtiquetas } from "./etiquetas.ts";
 import { processarNf, varrerNfs } from "./nf.ts";
 import { storeStub } from "./store.ts";
 import type { Env } from "./tipos.ts";
@@ -98,6 +99,23 @@ async function rotaApi(req: Request, env: Env, url: URL): Promise<Response> {
     try {
       const res = await cancelarNoErp(env, r[1]);
       return json(res, res.acao === "cancelado" || res.acao === "nada" ? 200 : 409);
+    } catch (e) {
+      return json({ erro: (e as Error).message }, 409);
+    }
+  }
+  // Etiquetas ---------------------------------------------------------------------
+  if (req.method === "GET" && p === "/api/etiquetas") return json({ etiquetas: await store.listarEtiquetas() });
+  if (req.method === "POST" && p === "/api/etiquetas/atualizar") {
+    try {
+      return json({ atualizados: await atualizarEnviosPendentes(env, 20) });
+    } catch (e) {
+      return json({ erro: (e as Error).message }, 502);
+    }
+  }
+  if (req.method === "GET" && p === "/api/etiquetas/baixar") {
+    const formato = url.searchParams.get("formato") === "zpl2" ? "zpl2" : "pdf";
+    try {
+      return await baixarEtiquetas(env, (url.searchParams.get("ids") ?? "").split(","), formato);
     } catch (e) {
       return json({ erro: (e as Error).message }, 409);
     }

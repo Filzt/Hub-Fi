@@ -52,6 +52,7 @@ export const PAINEL_HTML = /* html */ `<!doctype html>
   <div class="tabs">
     <button data-aba="pedidos" class="ativo">Pedidos</button>
     <button data-aba="nfs">NF-e → ML</button>
+    <button data-aba="etiquetas">Etiquetas</button>
     <button data-aba="estoque">Estoque e preço</button>
     <button data-aba="eventos">Eventos</button>
     <button data-aba="log">Log</button>
@@ -91,7 +92,7 @@ async function carregar() {
       ["Eventos com erro", e.erro || 0], ["Último evento", dt(s.store.ultimoEventoEm) || "—"],
     ];
     $("#cards").innerHTML = cards.map(([t, v]) => '<div class="card"><b>' + esc(v) + "</b><span>" + esc(t) + "</span></div>").join("");
-    await ({ pedidos, nfs, estoque, eventos, log })[aba]();
+    await ({ pedidos, nfs, etiquetas, estoque, eventos, log })[aba]();
   } catch (err) { $("#msg").textContent = err.message; }
 }
 
@@ -119,6 +120,33 @@ async function nfs() {
       "</td><td>" + esc(n.logistica ?? "—") + '</td><td class="s ' + esc(n.status) + '">' + esc(n.status) + '</td><td class="mut">' + esc(n.detalhe ?? "") +
       "</td><td>" + (n.status === "pronto" || n.status === "erro" ? '<button class="gravar" data-nf="' + esc(n.chave) + '">enviar XML</button>' : "") +
       "</td></tr>").join("") + "</tbody></table>";
+}
+
+async function etiquetas() {
+  const d = await api("/api/etiquetas");
+  $("#conteudo").innerHTML = '<p class="mut" style="padding:8px 12px;margin:0">Etiqueta do ML 10x15, já com a NF. ' +
+    '<button id="imp-pdf" class="gravar">imprimir selecionadas (PDF)</button> <button id="imp-zpl">baixar ZPL (Zebra)</button> ' +
+    '<button id="atualizar-envios">atualizar status</button> · máx. 50 por vez</p>' +
+    '<table><thead><tr><th><input type="checkbox" id="todas" aria-label="Selecionar todas"></th><th>Envio</th><th>Pedido ML</th><th>NF</th><th>Total</th><th>Situação</th><th>Impresso pelo painel</th></tr></thead><tbody>' +
+    d.etiquetas.map((e) => '<tr><td><input type="checkbox" class="etq" value="' + esc(e.shipment_id) + '"' + (e.substatus === "ready_to_print" ? " checked" : "") +
+      ' aria-label="Selecionar envio ' + esc(e.shipment_id) + '"></td><td>' + esc(e.shipment_id) + "</td><td>" + esc(e.chave ?? "—") + "</td><td>" +
+      esc(e.fiscal_key ? e.fiscal_key.slice(25, 34).replace(/^0+/, "") : "—") + '</td><td class="n">' + (e.total != null ? brl(e.total) : "—") +
+      '</td><td class="s ' + (e.substatus === "ready_to_print" ? "pronto" : "ok") + '">' + (e.substatus === "ready_to_print" ? "para imprimir" : "já impressa") +
+      "</td><td>" + (e.impresso_em ? dt(e.impresso_em) : "—") + "</td></tr>").join("") + "</tbody></table>";
+}
+
+async function baixarEtiquetas(formato) {
+  const ids = [...document.querySelectorAll(".etq:checked")].map((c) => c.value);
+  if (!ids.length) throw new Error("Selecione ao menos um envio.");
+  if (ids.length > 50) throw new Error("Máximo de 50 etiquetas por vez.");
+  if (!confirm("Baixar " + ids.length + " etiqueta(s)? O ML marca esses envios como impressos.")) return;
+  const r = await fetch("/api/etiquetas/baixar?formato=" + formato + "&ids=" + ids.join(","), { headers: { Authorization: "Bearer " + token } });
+  if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.erro || ("HTTP " + r.status)); }
+  const url = URL.createObjectURL(await r.blob());
+  if (formato === "pdf") window.open(url, "_blank");
+  else { const a = document.createElement("a"); a.href = url; a.download = "etiquetas.zpl"; a.click(); }
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+  return carregar();
 }
 
 async function estoque() {
@@ -171,6 +199,9 @@ document.addEventListener("click", async (ev) => {
       alert("Gravado: NUNOTA " + (d.pedido.nunota ?? "?"));
       return carregar();
     }
+    if (b.id === "imp-pdf") return baixarEtiquetas("pdf");
+    if (b.id === "imp-zpl") return baixarEtiquetas("zpl2");
+    if (b.id === "atualizar-envios") { b.disabled = true; b.textContent = "atualizando..."; await api("/api/etiquetas/atualizar", { method: "POST" }); return carregar(); }
     if (b.id === "rodar-estoque") { b.disabled = true; b.textContent = "rodando..."; await api("/api/estoque/rodar", { method: "POST" }); return carregar(); }
     if (b.id === "varrer") { b.disabled = true; b.textContent = "varrendo..."; await api("/api/nfs/varrer", { method: "POST" }); return carregar(); }
     if (b.dataset.nf) {
@@ -184,6 +215,7 @@ document.addEventListener("click", async (ev) => {
     if (b.dataset.reabrir) { await api("/api/eventos/" + b.dataset.reabrir + "/reabrir", { method: "POST" }); return carregar(); }
   } catch (err) { $("#msg").textContent = err.message; b.disabled = false; }
 });
+document.addEventListener("change", (ev) => { if (ev.target.id === "todas") document.querySelectorAll(".etq").forEach((c) => { c.checked = ev.target.checked; }); });
 if (token) carregar();
 </script>
 </body>

@@ -191,3 +191,27 @@ export async function meliEnviar(
   }
   throw new ErroDefinitivo(`ML ${metodo} ${caminho}: 401 mesmo após renovar o token`);
 }
+
+/** GET que devolve o corpo cru (PDF/ZPL de etiqueta). 5xx/429/rede = temporário. */
+export async function meliBaixar(env: Env, caminho: string): Promise<{ status: number; corpo: ArrayBuffer; contentType: string }> {
+  for (let tentativa = 0; tentativa < 2; tentativa++) {
+    let token: string;
+    try {
+      token = await tokenAtual(env, tentativa > 0);
+    } catch (e) {
+      const msg = (e as Error).message;
+      if (/não semeado|recusada: HTTP 4/.test(msg)) throw new ErroDefinitivo(msg);
+      throw new ErroTemporario(msg);
+    }
+    let r: Response;
+    try {
+      r = await fetch(`${env.MELI_API}${caminho}`, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(TIMEOUT_MS.meli * 3) });
+    } catch (e) {
+      throw new ErroTemporario(`ML ${caminho}: falha de rede/timeout (${(e as Error).message})`);
+    }
+    if (r.status === 401 && tentativa === 0) continue;
+    if (r.status === 429 || r.status >= 500) throw new ErroTemporario(`ML ${caminho}: HTTP ${r.status}`);
+    return { status: r.status, corpo: await r.arrayBuffer(), contentType: r.headers.get("content-type") ?? "" };
+  }
+  throw new ErroDefinitivo(`ML ${caminho}: 401 mesmo após renovar o token`);
+}

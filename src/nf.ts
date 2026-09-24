@@ -14,6 +14,7 @@
 import { meliEnviar, meliGet } from "./meli.ts";
 import { consultar, lerXmlNfe } from "./sankhya.ts";
 import { storeStub } from "./store.ts";
+import { atualizarEnvio } from "./etiquetas.ts";
 import { type Env, ErroDefinitivo, ErroTemporario } from "./tipos.ts";
 import { validarNfeProc } from "./xml.ts";
 
@@ -119,6 +120,7 @@ export async function processarNf(env: Env, chave: string, nunotaNf: number, env
     const depois = await notaNoMl(env, envio, chave);
     if (depois === info.chave || (flex && depois)) {
       await store.log("info", chave, `XML da NF ${info.numero} (NUNOTA ${nunotaNf}) enviado ao ML — envio ${envio.id}`);
+      await atualizarEnvio(env, envio.id).catch(() => undefined); // aparece na aba Etiquetas
       return reg("enviado", { envio, fiscal_key: info.chave, detalhe: `HTTP ${r.status}` }, true);
     }
     const msg = `ML respondeu HTTP ${r.status}: ${JSON.stringify(r.corpo).slice(0, 300)}`;
