@@ -25,10 +25,11 @@ class_name = "Store"
 tag = "v1"
 new_sqlite_classes = ["MeliToken", "Store"]
 
-# Reprocessa eventos pendentes/com erro (retry com backoff) — rede de segurança
+# A cada 2 min: reprocessa eventos (retry com backoff), envia XML de NF faturada e
+# sincroniza estoque/preço. Rede de segurança
 # para o webhook, que o ML descarta após 1 h de tentativas.
 [triggers]
-crons = ["*/10 * * * *"]
+crons = ["*/2 * * * *"]
 
 [vars]
 MODO = "automatico" # sombra | manual (grava só pelo botão) | automatico (grava pelo webhook)

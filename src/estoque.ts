@@ -1,8 +1,8 @@
 // Sincronização de estoque e preço Sankhya → Mercado Livre (planejamento em sync.ts).
 //
 // Orçamento por rodada (o Worker tem teto de subrequests por invocação):
-//   - catálogo: descoberta de anúncios 1x/hora (search scan) + releitura de 100
-//     anúncios por rodada, os mais antigos primeiro (ciclo completo ~50 min);
+//   - catálogo: descoberta de anúncios 1x/hora (search scan) + releitura de 40
+//     anúncios por rodada, os mais antigos primeiro (cron 2 min → ciclo ~23 min);
 //   - ERP: 1 consulta com saldo, ativo e preço de todos os SKUs anunciados;
 //   - antes de escrever, relê do ML só os anúncios que vão mudar (dado fresco);
 //   - no máximo MAX_PUTS alterações por rodada; o resto fica para a próxima.
@@ -15,7 +15,7 @@ import { storeStub } from "./store.ts";
 import { type AnuncioSync, type ErpSku, motivoParaAbortar, planejar } from "./sync.ts";
 import type { Env } from "./tipos.ts";
 
-const LOTE_RELEITURA = 100;
+const LOTE_RELEITURA = 40; // com cron a cada 2 min: ciclo completo ~23 min e ~29 mil gravações/dia no DO
 const MAX_PUTS = 15;
 const MAX_ZERAR = 30;
 const CATALOGO_A_CADA_MS = 60 * 60_000;
