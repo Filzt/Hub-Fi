@@ -60,10 +60,10 @@ Regras de dado:
 ## Configuração (uma vez)
 
 1. **Secrets do Worker** (painel da Cloudflare → Worker → Settings → Variables, tipo
-   *Secret*, ou `npx wrangler secret put NOME`):
-   `MELI_CLIENT_ID`, `MELI_CLIENT_SECRET`, `SANKHYA_CLIENT_ID`, `SANKHYA_CLIENT_SECRET`,
-   `SANKHYA_XTOKEN`, `ADMIN_TOKEN` (gere um valor longo aleatório).
-   Os valores estão no cofre `fi-ecommerce` (`SANKHYA_SKYLINE_*`, `MELI_*`).
+   *Secret*): `MELI_CLIENT_ID`, `MELI_CLIENT_SECRET`, `SANKHYA_CLIENT_ID`,
+   `SANKHYA_CLIENT_SECRET`, `SANKHYA_XTOKEN`, `ADMIN_TOKEN`.
+   `python scripts\copiar_secrets.py` copia cada um do cofre `fi-ecommerce` para a área
+   de transferência (sem mostrar na tela) e gera o `ADMIN_TOKEN` se ainda não existir.
 2. **Cloudflare Access** na rota `/painel` e `/api/*` (recomendado além do ADMIN_TOKEN).
 3. **DevCenter do ML** (app 903508635576879):
    - permissões funcionais de **Vendas/Pedidos**, **Envios** e **Faturamento** — hoje o
@@ -71,10 +71,12 @@ Regras de dado:
    - URL de notificações: `https://<worker>/ml/webhook`, tópicos `orders_v2`, `shipments`,
      `invoices`, `post_purchase`;
    - depois de mudar permissão, **reautorizar** o OAuth para o token ganhar os escopos.
-4. **Semear o token** (corte do dono do token): `POST /api/meli/semear` com
-   `{"refresh_token": "..."}`. **Isso consome o refresh token** — os scripts locais que
-   renovam sozinhos (`ml_api.py`, vigia de estoque) param de funcionar até passarem a
-   pedir o token em `GET /api/meli/access-token`.
+4. **Semear o token** (corte do dono do token):
+   `python scripts\semear_token.py https://<worker> --enviar` (sem `--enviar` só confere).
+   Entrega o refresh local ao Worker, grava `SKYHUB_URL` no cofre e aposenta o arquivo
+   de token local. Com `SKYHUB_URL` no cofre, o `ml_api.py` (e o vigia de estoque, que o
+   usa) pede o token em `GET /api/meli/access-token` e **não renova mais localmente**.
+   Rollback: apagar `SKYHUB_URL` do cofre e reautorizar o OAuth (`ml_api.py --trocar-code`).
 
 ## Desenvolvimento
 
