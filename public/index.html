@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SkyHub</title>
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<div class="app">
+  <aside class="lateral" aria-label="Módulos">
+    <div class="marca"><span class="logo-skyhub">SkyHub</span><span class="sub">ML ↔ Sankhya</span></div>
+    <nav>
+      <a href="#pedidos" data-mod="pedidos">Pedidos</a>
+      <a href="#produtos" data-mod="produtos">Produtos</a>
+      <a href="#precificacao" data-mod="precificacao">Precificação</a>
+      <a href="#integracao" data-mod="integracao">Integração</a>
+      <div class="submenu" id="sub-integracao">
+        <a href="#integracao" data-sub="visao">Visão geral</a>
+        <a href="#integracao/nfs" data-sub="nfs">NF-e → ML</a>
+        <a href="#integracao/logs" data-sub="logs">Logs</a>
+        <a href="#integracao/eventos" data-sub="eventos">Eventos</a>
+      </div>
+    </nav>
+    <div class="acesso">
+      <label for="tk">Token de acesso</label>
+      <input id="tk" type="password" autocomplete="off" placeholder="cole o token">
+      <button id="entrar" type="button">Entrar</button>
+    </div>
+  </aside>
+  <main>
+    <header class="topo">
+      <h1 id="titulo">SkyHub</h1>
+      <div id="modos" class="modos"></div>
+    </header>
+    <div id="msg" role="alert"></div>
+    <section id="conteudo"><p class="vazio">Informe o token de acesso para carregar.</p></section>
+  </main>
+</div>
+<div id="gaveta" class="gaveta" hidden>
+  <div class="gaveta-caixa" role="dialog" aria-modal="true" aria-labelledby="gaveta-titulo">
+    <div class="gaveta-topo"><h2 id="gaveta-titulo"></h2><button type="button" id="fechar-gaveta" aria-label="Fechar">✕</button></div>
+    <div id="gaveta-corpo"></div>
+  </div>
+</div>
+<script src="/app.js"></script>
+</body>
+</html>

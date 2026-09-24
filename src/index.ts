@@ -2,9 +2,10 @@
 
 import { TOPICOS_ACEITOS } from "./config.ts";
 import { tokenStub } from "./meli.ts";
-import { PAINEL_HTML } from "./painel.ts";
 import { cancelarNoErp, confirmarPedidoErp, gravarPedido, processarEvento, processarPedido } from "./processamento.ts";
-import { sincronizarEstoque } from "./estoque.ts";
+import { erpDaUltimaRodada, reguasVigentes, sincronizarEstoque } from "./estoque.ts";
+import { FASES, fase, type LinhaFluxo } from "./fluxo.ts";
+import { precoAlvo, REGUA_PRECO, LIMITES_REGUA, simularReguas, validarReguas, type AnuncioSync } from "./sync.ts";
 import { atualizarEnviosPendentes, baixarEtiquetas } from "./etiquetas.ts";
 import { processarNf, varrerNfs } from "./nf.ts";
 import { storeStub } from "./store.ts";
@@ -103,6 +104,80 @@ async function rotaApi(req: Request, env: Env, url: URL): Promise<Response> {
       return json({ erro: (e as Error).message }, 409);
     }
   }
+  // Módulo Pedidos: esteira por fase ---------------------------------------------
+  if (req.method === "GET" && p === "/api/fluxo") {
+    const dias = Math.min(60, Math.max(1, Number(url.searchParams.get("dias") ?? 7)));
+    const desde = new Date(Date.now() - dias * 86_400_000).toISOString();
+    const linhas = (await store.fluxo(desde)).map((l) => ({ ...l, fase: fase(l as unknown as LinhaFluxo) }));
+    const contagem = Object.fromEntries(FASES.map((f) => [f, linhas.filter((l) => l.fase === f).length]));
+    return json({ dias, fases: FASES, contagem, pedidos: linhas });
+  }
+
+  // Módulo Produtos ---------------------------------------------------------------
+  if (req.method === "GET" && p === "/api/produtos") {
+    const [anuncios, erp, reguas, erpEm] = await Promise.all([
+      store.todosAnuncios(), erpDaUltimaRodada(env), reguasVigentes(env), store.meta("ultimo_erp_em"),
+    ]);
+    const produtos = anuncios.map((a) => {
+      const x = erp.get(String(a.sku));
+      const alvo = x && x.ativo ? precoAlvo(x.preco_loja, String(a.listing_type), reguas) : null;
+      return { ...a, disp: x ? Math.max(0, Math.floor(x.disp)) : null, ativo_erp: x ? x.ativo : null, preco_loja: x?.preco_loja ?? null, preco_alvo: alvo };
+    });
+    return json({ erpEm: erpEm ? Number(erpEm) : null, produtos });
+  }
+
+  // Módulo Precificação -----------------------------------------------------------
+  if (req.method === "GET" && p === "/api/reguas") {
+    const salvo = await store.meta("reguas");
+    const hist = await store.meta("reguas_hist");
+    return json({
+      reguas: await reguasVigentes(env), padrao: REGUA_PRECO, limites: LIMITES_REGUA,
+      vigente: salvo ? JSON.parse(salvo) : null, historico: hist ? JSON.parse(hist) : [],
+    });
+  }
+  if (req.method === "POST" && p === "/api/reguas/simular") {
+    const corpo = (await req.json().catch(() => ({}))) as { reguas?: unknown };
+    const v = validarReguas(corpo.reguas);
+    if (!v.ok) return json({ erro: v.erro }, 400);
+    const anuncios = (await store.anunciosAtivos()) as unknown as AnuncioSync[];
+    return json(simularReguas(anuncios, await erpDaUltimaRodada(env), v.reguas));
+  }
+  if (req.method === "POST" && p === "/api/reguas") {
+    const corpo = (await req.json().catch(() => ({}))) as { reguas?: unknown; responsavel?: string; motivo?: string };
+    const v = validarReguas(corpo.reguas);
+    if (!v.ok) return json({ erro: v.erro }, 400);
+    const responsavel = String(corpo.responsavel ?? "").trim().slice(0, 60);
+    const motivo = String(corpo.motivo ?? "").trim().slice(0, 200);
+    if (!responsavel) return json({ erro: "informe quem está alterando" }, 400);
+    const anterior = await reguasVigentes(env);
+    const registro = { reguas: v.reguas, anterior, responsavel, motivo, em: Date.now() };
+    await store.setMeta("reguas", JSON.stringify(registro));
+    const hist = JSON.parse((await store.meta("reguas_hist")) ?? "[]") as unknown[];
+    await store.setMeta("reguas_hist", JSON.stringify([registro, ...hist].slice(0, 50)));
+    await store.log("aviso", null, `régua de preço alterada por ${responsavel}: ${JSON.stringify(anterior)} → ${JSON.stringify(v.reguas)}${motivo ? ` — ${motivo}` : ""}`);
+    return json({ ok: true, ...registro });
+  }
+
+  // Módulo Integração: saúde e volume de hoje -------------------------------------
+  if (req.method === "GET" && p === "/api/integracao") {
+    const agora = Date.now();
+    const inicioDia = agora - ((agora - 3 * 3_600_000) % 86_400_000); // meia-noite em São Paulo (UTC−3)
+    const [meli, saude, metricas, plano, erpEm, ultErroSankhya, ultErroMl] = await Promise.all([
+      tokenStub(env).status(), store.saude(), store.metricasDesde(inicioDia), store.meta("ultimo_plano"),
+      store.meta("ultimo_erp_em"), store.ultimoLogDe("%Sankhya%"), store.ultimoLogDe("%ML %HTTP%"),
+    ]);
+    const resumo = plano ? (JSON.parse(plano) as { resumo: { em: number; abortado: string | null } }).resumo : null;
+    const eventos = Object.fromEntries((saude.eventos as Array<{ status: string; n: number }>).map((e) => [e.status, e.n]));
+    return json({
+      agora,
+      modos: { pedidos: env.MODO, xml: env.XML_MODO, cancelamento: env.CANCELAMENTO_MODO, estoque: env.ESTOQUE_MODO, preco: env.PRECO_MODO },
+      ml: { tokenOk: meli.semeado && (meli.expiraEm ?? 0) > agora, expiraEm: meli.expiraEm ?? null, ultimoEvento: saude.ultimoEventoEm, eventosComErro: eventos.erro ?? 0, ultimoErro: ultErroMl },
+      skyhub: { ultimaRodada: resumo?.em ?? null, rodadaAbortada: resumo?.abortado ?? null, eventosPendentes: eventos.pendente ?? 0 },
+      sankhya: { ultimaLeitura: erpEm ? Number(erpEm) : null, ultimoErro: ultErroSankhya },
+      hoje: metricas,
+    });
+  }
+
   // Etiquetas ---------------------------------------------------------------------
   if (req.method === "GET" && p === "/api/etiquetas") return json({ etiquetas: await store.listarEtiquetas() });
   if (req.method === "POST" && p === "/api/etiquetas/atualizar") {
@@ -200,11 +275,7 @@ export default {
         return json({ modo: env.MODO, secrets: presentes, adminTokenSha256Prefixo: hash });
       }
       if (url.pathname.startsWith("/api/")) return await rotaApi(req, env, url);
-      if (url.pathname === "/" || url.pathname === "/painel") {
-        return new Response(PAINEL_HTML, {
-          headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" },
-        });
-      }
+      if (url.pathname === "/painel") return Response.redirect(new URL("/", url).toString(), 302);
       return json({ erro: "não encontrado" }, 404);
     } catch (e) {
       console.error("erro não tratado", (e as Error).message);

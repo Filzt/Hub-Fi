@@ -12,7 +12,7 @@ import { meliEnviar, meliGet } from "./meli.ts";
 import { sqlTexto } from "./nota.ts";
 import { consultar } from "./sankhya.ts";
 import { storeStub } from "./store.ts";
-import { type AnuncioSync, type ErpSku, motivoParaAbortar, planejar } from "./sync.ts";
+import { type AnuncioSync, type ErpSku, motivoParaAbortar, planejar, REGUA_PRECO, type Reguas } from "./sync.ts";
 import type { Env } from "./tipos.ts";
 
 const LOTE_RELEITURA = 40; // com cron a cada 2 min: ciclo completo ~23 min e ~29 mil gravações/dia no DO
@@ -74,7 +74,29 @@ async function descobrirIds(env: Env): Promise<string[]> {
 }
 
 /** Saldo disponível, situação e preço de loja (tabela 0) por SKU, direto do Sankhya. */
-async function lerErp(env: Env, skus: string[]): Promise<{ mapa: Map<string, ErpSku>; duplicados: string[] }> {
+/** Régua vigente: a salva pelo time na Precificação, senão a padrão. */
+export async function reguasVigentes(env: Env): Promise<Reguas> {
+  const salvo = await storeStub(env).meta("reguas");
+  if (!salvo) return REGUA_PRECO;
+  try {
+    return { ...REGUA_PRECO, ...(JSON.parse(salvo) as { reguas: Reguas }).reguas };
+  } catch {
+    return REGUA_PRECO;
+  }
+}
+
+/** Snapshot do ERP gravado na última rodada (para Produtos e simulação de régua). */
+export async function erpDaUltimaRodada(env: Env): Promise<Map<string, ErpSku>> {
+  const bruto = await storeStub(env).meta("ultimo_erp");
+  const mapa = new Map<string, ErpSku>();
+  if (!bruto) return mapa;
+  for (const [sku, [disp, ativo, preco]] of Object.entries(JSON.parse(bruto) as Record<string, [number, number, number | null]>)) {
+    mapa.set(sku, { disp, ativo: ativo === 1, preco_loja: preco });
+  }
+  return mapa;
+}
+
+export async function lerErp(env: Env, skus: string[]): Promise<{ mapa: Map<string, ErpSku>; duplicados: string[] }> {
   const mapa = new Map<string, ErpSku>();
   const vistos = new Map<string, number>();
   const validos = skus.filter((s) => /^[A-Z0-9._-]{1,40}$/.test(s));
@@ -130,7 +152,11 @@ export async function sincronizarEstoque(env: Env, opts: { forcarCatalogo?: bool
   // 2. ERP e plano ---------------------------------------------------------------
   const skus = [...new Set(anuncios.map((a) => a.sku).filter(Boolean))];
   const { mapa, duplicados } = await lerErp(env, skus);
-  const plano = planejar(anuncios, mapa);
+  // 1 gravação por rodada (em vez de 1 por SKU) — alimenta Produtos e a simulação de régua.
+  await store.setMeta("ultimo_erp", JSON.stringify(Object.fromEntries([...mapa].map(([k, v]) => [k, [v.disp, v.ativo ? 1 : 0, v.preco_loja]]))));
+  await store.setMeta("ultimo_erp_em", String(Date.now()));
+  const reguas = await reguasVigentes(env);
+  const plano = planejar(anuncios, mapa, reguas);
   for (const d of duplicados) plano.alertas.push(`SKU ${d} tem mais de um cadastro no Sankhya — não mexo`);
   const comSaldo = [...mapa.values()].filter((x) => x.ativo && x.disp > 0).length;
   const anterior = Number((await store.meta("com_saldo")) ?? 0) || null;
@@ -157,7 +183,7 @@ export async function sincronizarEstoque(env: Env, opts: { forcarCatalogo?: bool
     const lote = aplicaveis.slice(0, MAX_PUTS);
     const frescos = await lerItens(env, lote.map((a) => a.item_id));
     await store.salvarAnuncios(frescos);
-    const replano = planejar(frescos, mapa); // com dado do ML de agora
+    const replano = planejar(frescos, mapa, reguas); // com dado do ML de agora
     for (const a of replano.acoes) {
       const corpo: Record<string, number> = {};
       if (aplicarQtd && a.qtd_para != null) corpo.available_quantity = a.qtd_para;

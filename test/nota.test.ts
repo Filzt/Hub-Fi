@@ -165,10 +165,36 @@ test("parceiro bloqueia sem CEP na TSICEP ou documento inválido", () => {
   assert.match(montarParceiro(billing({ identification: { type: "CPF", number: "123" } }), cep).bloqueio!, /documento/);
 });
 
-test("o JavaScript do painel é válido (template literal não pode quebrar string)", async () => {
-  const { PAINEL_HTML } = await import("../src/painel.ts");
-  const js = PAINEL_HTML.split("<script>")[1].split("</script>")[0];
+test("o JavaScript do painel (public/app.js) é válido", async () => {
+  const { readFileSync } = await import("node:fs");
+  const js = readFileSync(new URL("../public/app.js", import.meta.url), "utf8");
   assert.doesNotThrow(() => new Function(js));
+});
+
+test("fases do pedido na esteira", async () => {
+  const { fase } = await import("../src/fluxo.ts");
+  const base = { situacao: "pronto", gravacao: null, nunota: null, nf_status: null, nunota_nf: null, envio_status: null, envio_substatus: null };
+  assert.equal(fase(base), "novo");
+  assert.equal(fase({ ...base, situacao: "no_erp", gravacao: "gravado", nunota: 1 }), "erp");
+  assert.equal(fase({ ...base, situacao: "no_erp", nunota: 1, nunota_nf: 2, nf_status: "aguardando_ml" }), "faturado");
+  assert.equal(fase({ ...base, situacao: "no_erp", nunota_nf: 2, nf_status: "enviado", envio_status: "ready_to_ship", envio_substatus: "ready_to_print" }), "nf_ml");
+  assert.equal(fase({ ...base, situacao: "no_erp", nunota_nf: 2, nf_status: "enviado", envio_status: "ready_to_ship", envio_substatus: "printed" }), "etiqueta");
+  assert.equal(fase({ ...base, situacao: "no_erp", nunota_nf: 2, nf_status: "enviado", envio_status: "shipped" }), "enviado");
+  assert.equal(fase({ ...base, situacao: "bloqueado" }), "atencao");
+  assert.equal(fase({ ...base, situacao: "no_erp", gravacao: "gravado", nunota_nf: 2, nf_status: "divergente" }), "atencao");
+  assert.equal(fase({ ...base, situacao: "cancelado", nunota: 1 }), "cancelado");
+});
+
+test("réguas: valida limites e simula impacto", async () => {
+  const { validarReguas, simularReguas } = await import("../src/sync.ts");
+  assert.equal(validarReguas({ gold_special: { fator: 1.1236, soma: 70 }, gold_pro: { fator: 1.2, soma: 70 } }).ok, true);
+  assert.equal(validarReguas({ gold_special: { fator: 3, soma: 70 }, gold_pro: { fator: 1.2, soma: 70 } }).ok, false);
+  assert.equal(validarReguas({ gold_special: { fator: 1.1, soma: -1 }, gold_pro: { fator: 1.2, soma: 70 } }).ok, false);
+  const an = [{ item_id: "M1", sku: "A", status: "active", sub_status: "", qtd_ml: 1, preco_ml: 1193.6, listing_type: "gold_special" }];
+  const erp = new Map([["A", { disp: 1, ativo: true, preco_loja: 1000 }]]);
+  const s = simularReguas(an, erp, { gold_special: { fator: 1.1236, soma: 30 }, gold_pro: { fator: 1.2, soma: 30 } });
+  assert.equal(s.avaliados, 1); assert.equal(s.mudam, 1); assert.equal(s.descem, 1);
+  assert.equal(s.exemplos[0].para, 1153.6);
 });
 
 test("separa tipo e nome do logradouro", () => {

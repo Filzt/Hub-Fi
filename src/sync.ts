@@ -9,7 +9,10 @@
 //   nunca mexe em anúncio pausado pelo vendedor (paused_by_seller) nem em
 //   anúncio fora de active/paused.
 
-export const REGUA_PRECO: Record<string, { fator: number; soma: number }> = {
+export type Reguas = Record<string, { fator: number; soma: number }>;
+
+/** Régua padrão (usada enquanto o time não salvar outra na Precificação). */
+export const REGUA_PRECO: Reguas = {
   gold_special: { fator: 1.1236, soma: 70 }, // Clássico
   gold_pro: { fator: 1.2, soma: 70 }, // Premium (nenhum anúncio hoje)
 };
@@ -43,8 +46,8 @@ export interface Acao {
   motivo: string;
 }
 
-export function precoAlvo(loja: number | null, tipo: string): number | null {
-  const r = REGUA_PRECO[tipo];
+export function precoAlvo(loja: number | null, tipo: string, reguas: Reguas = REGUA_PRECO): number | null {
+  const r = reguas[tipo];
   if (!r || loja == null || !(loja > 0)) return null;
   return Math.round((loja * r.fator + r.soma) * 100) / 100;
 }
@@ -52,6 +55,7 @@ export function precoAlvo(loja: number | null, tipo: string): number | null {
 export function planejar(
   anuncios: AnuncioSync[],
   erp: Map<string, ErpSku>,
+  reguas: Reguas = REGUA_PRECO,
 ): { acoes: Acao[]; alertas: string[]; ignorados: number } {
   const acoes: Acao[] = [];
   const alertas: string[] = [];
@@ -77,7 +81,7 @@ export function planejar(
     const qtdPara = disp !== a.qtd_ml ? disp : null;
 
     let precoPara: number | null = null;
-    const alvo = disp > 0 ? precoAlvo(x.preco_loja, a.listing_type) : null;
+    const alvo = disp > 0 ? precoAlvo(x.preco_loja, a.listing_type, reguas) : null;
     if (alvo != null && (a.preco_ml == null || Math.abs(alvo - a.preco_ml) >= 0.01)) {
       if (a.preco_ml && Math.abs(alvo / a.preco_ml - 1) > LIMITE_VARIACAO_PRECO) {
         alertas.push(`${a.item_id} (${a.sku}): preço ${a.preco_ml} → ${alvo} passa de ${LIMITE_VARIACAO_PRECO * 100}% — não aplico`);
@@ -114,4 +118,48 @@ export function motivoParaAbortar(
     return `SKUs com saldo caíram de ${ctx.comSaldoAnterior} para ${ctx.comSaldo} desde a última rodada`;
   }
   return null;
+}
+
+/** Limites aceitos ao salvar régua pelo painel (protege contra digitação errada). */
+export const LIMITES_REGUA = { fatorMin: 1, fatorMax: 2, somaMin: 0, somaMax: 500 } as const;
+
+export function validarReguas(r: unknown): { ok: true; reguas: Reguas } | { ok: false; erro: string } {
+  if (!r || typeof r !== "object") return { ok: false, erro: "réguas ausentes" };
+  const out: Reguas = {};
+  for (const tipo of Object.keys(REGUA_PRECO)) {
+    const v = (r as Record<string, { fator?: unknown; soma?: unknown }>)[tipo];
+    const fator = Number(v?.fator), soma = Number(v?.soma);
+    if (!Number.isFinite(fator) || fator < LIMITES_REGUA.fatorMin || fator > LIMITES_REGUA.fatorMax) {
+      return { ok: false, erro: `${tipo}: fator deve ficar entre ${LIMITES_REGUA.fatorMin} e ${LIMITES_REGUA.fatorMax}` };
+    }
+    if (!Number.isFinite(soma) || soma < LIMITES_REGUA.somaMin || soma > LIMITES_REGUA.somaMax) {
+      return { ok: false, erro: `${tipo}: acréscimo deve ficar entre R$ ${LIMITES_REGUA.somaMin} e R$ ${LIMITES_REGUA.somaMax}` };
+    }
+    out[tipo] = { fator: Math.round(fator * 10000) / 10000, soma: Math.round(soma * 100) / 100 };
+  }
+  return { ok: true, reguas: out };
+}
+
+/** Impacto de uma régua nova sobre os anúncios com saldo (prévia antes de salvar). */
+export function simularReguas(
+  anuncios: AnuncioSync[],
+  erp: Map<string, ErpSku>,
+  reguas: Reguas,
+): { avaliados: number; mudam: number; sobem: number; descem: number; bloqueados: number; variacaoMedia: number; exemplos: Array<{ item_id: string; sku: string; de: number; para: number }> } {
+  let avaliados = 0, mudam = 0, sobem = 0, descem = 0, bloqueados = 0, somaVar = 0;
+  const exemplos: Array<{ item_id: string; sku: string; de: number; para: number }> = [];
+  for (const a of anuncios) {
+    const x = erp.get(a.sku);
+    if (!x || !x.ativo || x.disp <= 0 || !a.preco_ml) continue;
+    const alvo = precoAlvo(x.preco_loja, a.listing_type, reguas);
+    if (alvo == null) continue;
+    avaliados++;
+    if (Math.abs(alvo - a.preco_ml) < 0.01) continue;
+    const variacao = alvo / a.preco_ml - 1;
+    if (Math.abs(variacao) > LIMITE_VARIACAO_PRECO) { bloqueados++; continue; }
+    mudam++; somaVar += variacao;
+    if (alvo > a.preco_ml) sobem++; else descem++;
+    if (exemplos.length < 8) exemplos.push({ item_id: a.item_id, sku: a.sku, de: a.preco_ml, para: alvo });
+  }
+  return { avaliados, mudam, sobem, descem, bloqueados, variacaoMedia: mudam ? Math.round((somaVar / mudam) * 10000) / 100 : 0, exemplos };
 }

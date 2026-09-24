@@ -11,6 +11,12 @@ compatibility_date = "2026-09-01"
 [observability]
 enabled = true
 
+# Painel (HTML/CSS/JS estáticos em public/). /api, webhook e /config vão direto ao Worker.
+[assets]
+directory = "./public"
+binding = "ASSETS"
+run_worker_first = ["/api/*", "/ml/webhook", "/config", "/painel"]
+
 # Estado em Durable Objects com SQLite: não exige criar D1/Queue/R2 antes do
 # primeiro deploy (o build do GitHub funciona sem provisionamento manual).
 [[durable_objects.bindings]]

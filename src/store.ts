@@ -243,6 +243,50 @@ export class Store extends DurableObject<Env> {
     for (const id of ids) this.sql.exec(`UPDATE envios SET impresso_em = ? WHERE shipment_id = ?`, Date.now(), id);
   }
 
+  /** Pedidos com NF e envio, para a esteira do módulo Pedidos. */
+  fluxo(desde: string, limite = 500) {
+    return this.sql
+      .exec(
+        `SELECT p.chave, p.order_ids, p.data_ml, p.status_ml, p.situacao, p.total, p.comissao, p.frete, p.codparc,
+                p.nunota, p.gravacao, p.gravacao_erro, p.cancelamento, p.nunotas_base, p.atualizado_em,
+                n.nunota_nf, n.status nf_status, n.fiscal_key, n.detalhe nf_detalhe, n.shipment_id,
+                e.status envio_status, e.substatus envio_substatus, e.impresso_em
+         FROM pedidos p
+         LEFT JOIN nfs n ON n.chave = p.chave
+         LEFT JOIN envios e ON e.shipment_id = n.shipment_id
+         WHERE p.data_ml >= ? ORDER BY p.data_ml DESC LIMIT ?`,
+        desde, limite,
+      )
+      .toArray();
+  }
+
+  todosAnuncios() {
+    return this.sql
+      .exec(`SELECT item_id, sku, status, sub_status, qtd_ml, preco_ml, listing_type, lido_em, ultima_acao, acao_em
+             FROM anuncios WHERE status <> 'fora' ORDER BY sku`)
+      .toArray();
+  }
+
+  /** Contagens de hoje para o painel de integração (desde = epoch ms do início do dia). */
+  metricasDesde(desde: number) {
+    const um = (sql: string) => Number(this.sql.exec<{ n: number }>(sql, desde).one().n ?? 0);
+    return {
+      eventosRecebidos: um(`SELECT COUNT(*) n FROM eventos WHERE recebido_em >= ?`),
+      pedidosGravados: um(`SELECT COUNT(*) n FROM pedidos WHERE gravacao = 'gravado' AND gravacao_em >= ?`),
+      xmlEnviados: um(`SELECT COUNT(*) n FROM nfs WHERE status = 'enviado' AND atualizado_em >= ?`),
+      ajustesAnuncio: um(`SELECT COUNT(*) n FROM anuncios WHERE acao_em >= ? AND ultima_acao LIKE 'ok%'`),
+      falhasAnuncio: um(`SELECT COUNT(*) n FROM anuncios WHERE acao_em >= ? AND ultima_acao NOT LIKE 'ok%'`),
+      errosLog: um(`SELECT COUNT(*) n FROM log WHERE nivel = 'erro' AND em >= ?`),
+      etiquetasBaixadas: um(`SELECT COUNT(*) n FROM envios WHERE impresso_em >= ?`),
+    };
+  }
+
+  ultimoLogDe(padrao: string): { em: number; nivel: string; msg: string } | null {
+    return (this.sql
+      .exec<{ em: number; nivel: string; msg: string }>(`SELECT em, nivel, msg FROM log WHERE msg LIKE ? ORDER BY id DESC LIMIT 1`, padrao)
+      .toArray()[0]) ?? null;
+  }
+
   meta(chave: string): string | null {
     return this.sql.exec<{ valor: string }>(`SELECT valor FROM meta WHERE chave = ?`, chave).toArray()[0]?.valor ?? null;
   }
