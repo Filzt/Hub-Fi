@@ -4,6 +4,26 @@ Worker da Cloudflare que vai substituir a Base no canal Mercado Livre da Skyline
 anúncio a partir do SKU, pedido no Sankhya com comissão e frete, XML da NF-e de
 volta ao ML, etiqueta e painel de operação.
 
+## Estado em 24/09/2026
+
+Tudo no automático, a cada 2 min (cron) + webhook do ML em tempo real:
+
+| Fluxo | Variável | Modo |
+|---|---|---|
+| Venda ML → parceiro + pedido 1090 confirmado no Sankhya | `MODO` | automatico |
+| NF 1130 autorizada → XML ao ML (libera etiqueta) | `XML_MODO` | automatico |
+| Venda cancelada → cancela 1090 não faturado (`CACSP.cancelarNota`) | `CANCELAMENTO_MODO` | automatico |
+| Estoque Sankhya → ML | `ESTOQUE_MODO` | automatico |
+| Preço (tabela 0 × régua) → ML | `PRECO_MODO` | automatico |
+
+Painel (`public/`, Workers Assets): **Pedidos** (esteira por fase), **Expedição**
+(bipagem e impressão da etiqueta 10x15 do ML), **Produtos**, **Precificação** (réguas
+por marketplace, com simulação e histórico) e **Integração** (diagrama ML ↔ SkyHub ↔
+Sankhya, NF-e, logs e eventos).
+
+Pendente: publicação de anúncio a partir do SKU; login individual (Cloudflare Access);
+conta Cloudflare da empresa.
+
 ## Modo de operação (`MODO` no `wrangler.toml`)
 
 A Base foi desligada em 24/09/2026. O Worker lê cada pedido do ML, monta o parceiro
