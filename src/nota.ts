@@ -26,7 +26,10 @@ export interface ItemConsolidado {
   sku: string;
   quantidade: number;
   precoCentavos: number;
-  /** sale_fee do ML × quantidade (premissa: sale_fee é unitário — ver alertas). */
+  /**
+   * sale_fee do ML × quantidade. sale_fee é POR UNIDADE — confirmado em 24/09/2026
+   * num pedido com quantidade 2 (81,86 = 11,0% do preço unitário, mesma taxa dos demais).
+   */
   comissaoCentavos: number;
 }
 
@@ -85,11 +88,6 @@ export function consolidar(orders: OrderML[]): PedidoConsolidado {
       if (!sku) alertas.push(`order ${o.id}: item ${oi.item.id} sem SELLER_SKU`);
       else if (!skuValido(sku)) alertas.push(`order ${o.id}: SKU com caractere inválido: ${sku}`);
       const qtd = Number(oi.quantity);
-      if (qtd > 1) {
-        alertas.push(
-          `order ${o.id}: quantidade ${qtd} — confirmar se sale_fee é unitário antes de confiar na comissão`,
-        );
-      }
       itens.push({
         orderId: String(o.id),
         itemId: oi.item.id,
@@ -218,4 +216,97 @@ export function compararComBase(
     div.push(`comissão ${reais(nota.comissaoCentavos)} × Base ${reais(comBase)}`);
   }
   return { encontrado: true, nunotas: pedidos.map((d) => Number(d.NUNOTA)), divergencias: div };
+}
+
+// ---------------------------------------------------------------------------
+// Parceiro (TGFPAR) a partir do billing-info do ML
+// ---------------------------------------------------------------------------
+
+/** GET /orders/billing-info/MLB/{id} → buyer.billing_info (formato visto em 24/09/2026). */
+export interface BillingML {
+  name?: string | null;
+  last_name?: string | null;
+  identification?: { type?: string | null; number?: string | null } | null;
+  taxes?: { inscriptions?: { state_registration?: string | null } | null } | null;
+  address?: {
+    street_name?: string | null;
+    street_number?: string | null;
+    comment?: string | null;
+    zip_code?: string | null;
+  } | null;
+}
+
+/** Linha da TSICEP: o Sankhya tem a base nacional de CEP (1,47 mi, todos com CODEND). */
+export interface CepSankhya {
+  CODEND: number;
+  CODBAI: number;
+  CODCID: number;
+}
+
+// Tamanhos de TGFPAR (ALL_TAB_COLUMNS, 24/09/2026).
+const TAM = { NOMEPARC: 100, NUMEND: 6, COMPLEMENTO: 30, IDENTINSCESTAD: 16, CEP: 8 } as const;
+
+/**
+ * Campos do parceiro no padrão dos 555 que a Base criou: nome em maiúsculas,
+ * razão social como veio, "SN" sem número, CLIENTE='S', CLASSIFICMS='C'.
+ * Nunca trunca nome, documento nem IE — nesses casos bloqueia.
+ */
+export function montarParceiro(
+  b: BillingML | null,
+  cep: CepSankhya | null,
+): { campos: Record<string, string> | null; bloqueio: string | null; alertas: string[] } {
+  const alertas: string[] = [];
+  const falha = (m: string) => ({ campos: null, bloqueio: m, alertas });
+  if (!b) return falha("billing-info vazio");
+
+  const doc = soDigitos(b.identification?.number);
+  const tipoDoc = String(b.identification?.type ?? "").toUpperCase();
+  const tippessoa = tipoDoc === "CNPJ" || doc.length === 14 ? "J" : tipoDoc === "CPF" || doc.length === 11 ? "F" : "";
+  if (!tippessoa || (tippessoa === "F" && doc.length !== 11) || (tippessoa === "J" && doc.length !== 14)) {
+    return falha(`documento do comprador inválido (${tipoDoc || "sem tipo"}, ${doc.length} dígitos)`);
+  }
+
+  const nome = [b.name, b.last_name].map((x) => String(x ?? "").trim()).filter(Boolean).join(" ").replace(/\s+/g, " ");
+  if (!nome) return falha("comprador sem nome no billing-info");
+  if (nome.length > TAM.NOMEPARC) return falha(`nome com ${nome.length} caracteres (máx. ${TAM.NOMEPARC})`);
+
+  const cepDig = soDigitos(b.address?.zip_code);
+  if (cepDig.length !== TAM.CEP) return falha(`CEP inválido no billing-info (${cepDig || "vazio"})`);
+  if (!cep) return falha(`CEP ${cepDig} não encontrado na TSICEP`);
+
+  let numero = String(b.address?.street_number ?? "").trim();
+  let complemento = String(b.address?.comment ?? "").trim().replace(/\s+/g, " ");
+  if (!numero || /^s\/?n$/i.test(numero)) numero = "SN";
+  if (numero.length > TAM.NUMEND) {
+    alertas.push(`número "${numero}" não cabe em NUMEND (${TAM.NUMEND}); foi para o complemento`);
+    complemento = `Nº ${numero}${complemento ? " " + complemento : ""}`;
+    numero = "SN";
+  }
+  if (complemento.length > TAM.COMPLEMENTO) {
+    alertas.push(`complemento cortado em ${TAM.COMPLEMENTO} caracteres`);
+    complemento = complemento.slice(0, TAM.COMPLEMENTO).trim();
+  }
+
+  const campos: Record<string, string> = {
+    NOMEPARC: nome.toUpperCase(),
+    RAZAOSOCIAL: nome,
+    TIPPESSOA: tippessoa,
+    CGC_CPF: doc,
+    CEP: cepDig,
+    CODEND: String(cep.CODEND),
+    CODBAI: String(cep.CODBAI),
+    CODCID: String(cep.CODCID),
+    NUMEND: numero,
+    CLIENTE: "S",
+    CLASSIFICMS: "C",
+    ATIVO: "S",
+  };
+  if (complemento) campos.COMPLEMENTO = complemento;
+
+  const ie = String(b.taxes?.inscriptions?.state_registration ?? "").trim();
+  if (ie && !/^isento$/i.test(ie)) {
+    if (ie.length > TAM.IDENTINSCESTAD) return falha(`IE com ${ie.length} caracteres (máx. ${TAM.IDENTINSCESTAD}) — nunca truncar`);
+    campos.IDENTINSCESTAD = ie;
+  }
+  return { campos, bloqueio: null, alertas };
 }

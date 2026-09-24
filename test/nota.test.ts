@@ -7,6 +7,7 @@ import {
   dataSaoPaulo,
   freteVendedorCentavos,
   montarNota,
+  montarParceiro,
   skuValido,
   type OrderML,
 } from "../src/nota.ts";
@@ -51,11 +52,13 @@ test("pack: itens de todas as orders no mesmo pedido, chave é o pack_id", () =>
   assert.equal(p.comissaoCentavos, 16501);
 });
 
-test("alerta quando falta SELLER_SKU ou quantidade > 1", () => {
-  const o = order("1", "", 10, 1);
+test("alerta quando falta SELLER_SKU; comissão multiplica sale_fee pela quantidade", () => {
+  const o = order("1", "", 744.16, 81.86);
   o.order_items[0].quantity = 2;
   const p = consolidar([o]);
-  assert.equal(p.alertas.length, 2);
+  assert.equal(p.alertas.length, 1);
+  assert.equal(p.comissaoCentavos, 16372);
+  assert.equal(p.totalCentavos, 148832);
 });
 
 test("SKU com aspas ou espaço é recusado (proteção do SQL)", () => {
@@ -112,4 +115,50 @@ test("comparação com a Base aponta divergência de item e comissão", () => {
   assert.equal(dif.divergencias.length, 2);
 
   assert.equal(compararComBase(nota, []).encontrado, false);
+});
+
+// Billing ILUSTRATIVO — formato de /orders/billing-info, dados inventados.
+const billing = (extra: Record<string, unknown> = {}) => ({
+  name: "Maria", last_name: "da Silva  Souza",
+  identification: { type: "CPF", number: "123.456.789-01" },
+  address: { street_name: "Rua X", street_number: "46", comment: "Apto 12", zip_code: "15900-000" },
+  ...extra,
+});
+const cep = { CODEND: 1230169, CODBAI: 33248, CODCID: 9720 };
+
+test("parceiro PF no padrão da Base", () => {
+  const r = montarParceiro(billing(), cep);
+  assert.equal(r.bloqueio, null);
+  assert.equal(r.campos!.NOMEPARC, "MARIA DA SILVA SOUZA");
+  assert.equal(r.campos!.RAZAOSOCIAL, "Maria da Silva Souza");
+  assert.equal(r.campos!.TIPPESSOA, "F");
+  assert.equal(r.campos!.CGC_CPF, "12345678901");
+  assert.equal(r.campos!.CEP, "15900000");
+  assert.equal(r.campos!.CODCID, "9720");
+  assert.equal(r.campos!.NUMEND, "46");
+  assert.equal(r.campos!.COMPLEMENTO, "Apto 12");
+  assert.equal(r.campos!.CLASSIFICMS, "C");
+  assert.equal(r.campos!.IDENTINSCESTAD, undefined);
+});
+
+test("parceiro: S/N vira SN, número longo vai ao complemento", () => {
+  assert.equal(montarParceiro(billing({ address: { street_number: "s/n", zip_code: "15900000" } }), cep).campos!.NUMEND, "SN");
+  const r = montarParceiro(billing({ address: { street_number: "1234567", comment: "Casa", zip_code: "15900000" } }), cep);
+  assert.equal(r.campos!.NUMEND, "SN");
+  assert.equal(r.campos!.COMPLEMENTO, "Nº 1234567 Casa");
+  assert.equal(r.alertas.length, 1);
+});
+
+test("parceiro PJ com IE; IE longa bloqueia em vez de truncar", () => {
+  const pj = { identification: { type: "CNPJ", number: "12.345.678/0001-90" }, taxes: { inscriptions: { state_registration: "123456789012" } } };
+  const r = montarParceiro(billing(pj), cep);
+  assert.equal(r.campos!.TIPPESSOA, "J");
+  assert.equal(r.campos!.IDENTINSCESTAD, "123456789012");
+  const longa = { ...pj, taxes: { inscriptions: { state_registration: "12345678901234567" } } };
+  assert.match(montarParceiro(billing(longa), cep).bloqueio!, /nunca truncar/);
+});
+
+test("parceiro bloqueia sem CEP na TSICEP ou documento inválido", () => {
+  assert.match(montarParceiro(billing(), null).bloqueio!, /TSICEP/);
+  assert.match(montarParceiro(billing({ identification: { type: "CPF", number: "123" } }), cep).bloqueio!, /documento/);
 });

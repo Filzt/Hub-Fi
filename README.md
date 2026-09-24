@@ -4,21 +4,31 @@ Worker da Cloudflare que vai substituir a Base no canal Mercado Livre da Skyline
 anúncio a partir do SKU, pedido no Sankhya com comissão e frete, XML da NF-e de
 volta ao ML, etiqueta e painel de operação.
 
-## Fase atual: SOMBRA
+## Modo de operação (`MODO` no `wrangler.toml`)
 
-Recebe as notificações de pedido do ML, relê o pedido na API, consulta o Sankhya e
-**monta o `CACSP.incluirNota` que seria enviado**, comparando com o pedido 1090 que a
-Base gravou. **Não existe caminho de escrita** no Sankhya nem no ML neste código: o
-cliente do Sankhya recusa tudo que não for `SELECT`.
+A Base foi desligada em 24/09/2026. O Worker lê cada pedido do ML, monta o parceiro
+(se o comprador for novo) e o `CACSP.incluirNota`, e grava conforme o modo:
+
+| MODO | Escrita no Sankhya |
+|---|---|
+| `sombra` | nunca |
+| `manual` | só pelo botão **gravar no Sankhya** do painel (ou `POST /api/pedidos/<order_id>/gravar`) |
+| `automatico` | sozinho, ao receber a notificação do ML |
+
+Trocar de modo = editar o `wrangler.toml` e dar push (vira deploy).
 
 | Situação no painel | Significado |
 |---|---|
-| `sombra_ok` | Worker e Base batem (itens, preço, parceiro, comissão) |
-| `divergente` | Base gravou diferente — ver detalhe |
-| `sem_base` | Base ainda não gravou (ou não vai gravar) |
-| `bloqueado` | falta dado: SKU sem cadastro/ambíguo, parceiro novo, sem CPF/CNPJ |
-| `cancelado` | cancelado no ML; alerta se já existe NF 1130 autorizada |
+| `pronto` | pago, com tudo resolvido; pode gravar (cria parceiro se for novo) |
+| `no_erp` | já existe pedido 1090 com esse número do ML e bate |
+| `divergente` | existe 1090, mas difere do ML — ver detalhe |
+| `bloqueado` | falta dado: SKU sem cadastro/ambíguo, CPF/CNPJ, CEP fora da TSICEP, IE > 16 |
+| `cancelado` | cancelado no ML; alerta se existe 1090 ou NF 1130 autorizada |
 | `aguardando_pagamento` | order ainda não `paid` |
+
+Contra duplicata: trava por pedido e por CPF/CNPJ no Durable Object, releitura da
+`TGFCAB` pela `OBSERVACAO` dentro da trava, e confirmação pela leitura quando a
+resposta do Sankhya se perde.
 
 ## Contexto do Sankhya da Skyline (conferido em 24/09/2026)
 
@@ -103,7 +113,7 @@ DevCenter ou excluir o Worker. A Base segue operando normalmente.
 
 ## Próximas fases
 
-1. Criação de parceiro e gravação do `incluirNota` (homologação → produção, com aprovação).
-2. Corte do pedido na Base; XML da 1130 (`TGFNFE.XMLENVCLI`) → `POST /shipments/{id}/invoice_data`.
+1. Passar para `automatico` depois dos primeiros pedidos gravados à mão conferidos.
+2. XML da 1130 (`TGFNFE.XMLENVCLI`) → `POST /shipments/{id}/invoice_data`.
 3. Etiqueta (`/shipment_labels`, até 50 por chamada) e impressão em lote.
 4. Estoque e preço; publicação a partir do SKU.

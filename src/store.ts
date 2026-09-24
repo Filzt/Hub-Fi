@@ -23,7 +23,7 @@ export type Pedido = {
   order_ids: string;
   data_ml: string;
   status_ml: string;
-  situacao: string; // sombra_ok | divergente | sem_base | bloqueado | cancelado | erro
+  situacao: string; // pronto | no_erp | divergente | bloqueado | cancelado | aguardando_pagamento
   total: number;
   comissao: number;
   frete: number;
@@ -32,6 +32,14 @@ export type Pedido = {
   nota_json: string | null;
   analise_json: string;
   atualizado_em: number;
+};
+
+/** Estado da gravação no Sankhya, guardado à parte da análise (que é refeita a cada evento). */
+export type Gravacao = {
+  nunota: number | null;
+  gravacao: string | null; // gravando | gravado | erro
+  gravacao_em: number | null;
+  gravacao_erro: string | null;
 };
 
 export class Store extends DurableObject<Env> {
@@ -69,6 +77,10 @@ export class Store extends DurableObject<Env> {
         atualizado_em INTEGER NOT NULL
       );
       CREATE INDEX IF NOT EXISTS ix_pedidos_data ON pedidos(data_ml);
+      CREATE TABLE IF NOT EXISTS travas (
+        nome TEXT PRIMARY KEY,
+        ate INTEGER NOT NULL
+      );
       CREATE TABLE IF NOT EXISTS log (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         em INTEGER NOT NULL,
@@ -77,6 +89,41 @@ export class Store extends DurableObject<Env> {
         msg TEXT NOT NULL
       );
     `);
+    // Migração: colunas de gravação (SQLite não tem ADD COLUMN IF NOT EXISTS).
+    const cols = new Set(this.sql.exec<{ name: string }>(`PRAGMA table_info(pedidos)`).toArray().map((c) => c.name));
+    for (const [nome, tipo] of [["nunota", "INTEGER"], ["gravacao", "TEXT"], ["gravacao_em", "INTEGER"], ["gravacao_erro", "TEXT"]]) {
+      if (!cols.has(nome)) this.sql.exec(`ALTER TABLE pedidos ADD COLUMN ${nome} ${tipo}`);
+    }
+  }
+
+  /**
+   * Trava nomeada com validade. O Durable Object é single-thread, então
+   * checar-e-gravar aqui é atômico. Devolve false se já está travado.
+   */
+  travar(nome: string, ttlMs: number): boolean {
+    const agora = Date.now();
+    this.sql.exec(`DELETE FROM travas WHERE ate < ?`, agora);
+    const c = this.sql.exec(`INSERT OR IGNORE INTO travas (nome, ate) VALUES (?, ?)`, nome, agora + ttlMs);
+    return c.rowsWritten > 0;
+  }
+
+  destravar(nome: string): void {
+    this.sql.exec(`DELETE FROM travas WHERE nome = ?`, nome);
+  }
+
+  gravacao(chave: string): Gravacao | null {
+    return (
+      this.sql
+        .exec<Gravacao>(`SELECT nunota, gravacao, gravacao_em, gravacao_erro FROM pedidos WHERE chave = ?`, chave)
+        .toArray()[0] ?? null
+    );
+  }
+
+  marcarGravacao(chave: string, estado: "gravando" | "gravado" | "erro", dados: { nunota?: number | null; erro?: string } = {}): void {
+    this.sql.exec(
+      `UPDATE pedidos SET gravacao = ?, gravacao_em = ?, nunota = COALESCE(?, nunota), gravacao_erro = ? WHERE chave = ?`,
+      estado, Date.now(), dados.nunota ?? null, estado === "erro" ? (dados.erro ?? "").slice(0, 1000) : null, chave,
+    );
   }
 
   /**
@@ -147,30 +194,36 @@ export class Store extends DurableObject<Env> {
       : this.sql.exec<Evento>(`SELECT * FROM eventos ORDER BY id DESC LIMIT ?`, limite).toArray();
   }
 
+  /** Upsert da análise — preserva as colunas de gravação. */
   salvarPedido(p: Pedido): void {
     this.sql.exec(
-      `INSERT OR REPLACE INTO pedidos
+      `INSERT INTO pedidos
        (chave, order_ids, data_ml, status_ml, situacao, total, comissao, frete, codparc,
         nunotas_base, nota_json, analise_json, atualizado_em)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+       ON CONFLICT(chave) DO UPDATE SET
+         order_ids=excluded.order_ids, data_ml=excluded.data_ml, status_ml=excluded.status_ml,
+         situacao=excluded.situacao, total=excluded.total, comissao=excluded.comissao, frete=excluded.frete,
+         codparc=excluded.codparc, nunotas_base=excluded.nunotas_base, nota_json=excluded.nota_json,
+         analise_json=excluded.analise_json, atualizado_em=excluded.atualizado_em`,
       p.chave, p.order_ids, p.data_ml, p.status_ml, p.situacao, p.total, p.comissao, p.frete,
       p.codparc, p.nunotas_base, p.nota_json, p.analise_json, p.atualizado_em,
     );
   }
 
-  listarPedidos(limite = 200): Omit<Pedido, "nota_json" | "analise_json">[] {
+  listarPedidos(limite = 200) {
     return this.sql
-      .exec<Pedido>(
+      .exec(
         `SELECT chave, order_ids, data_ml, status_ml, situacao, total, comissao, frete, codparc,
-                nunotas_base, atualizado_em
+                nunotas_base, atualizado_em, nunota, gravacao, gravacao_em, gravacao_erro
          FROM pedidos ORDER BY data_ml DESC LIMIT ?`,
         limite,
       )
       .toArray();
   }
 
-  pedido(chave: string): Pedido | null {
-    return this.sql.exec<Pedido>(`SELECT * FROM pedidos WHERE chave=?`, chave).toArray()[0] ?? null;
+  pedido(chave: string): (Pedido & Gravacao) | null {
+    return this.sql.exec<Pedido & Gravacao>(`SELECT * FROM pedidos WHERE chave=?`, chave).toArray()[0] ?? null;
   }
 
   log(nivel: "info" | "aviso" | "erro", chave: string | null, msg: string): void {

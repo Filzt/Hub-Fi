@@ -1,6 +1,8 @@
 # skyhub — integração Mercado Livre <-> Sankhya da Skyline.
-# Fase atual: SOMBRA. Lê ML e Sankhya, monta o pedido, compara com o que a Base
-# gravou. NÃO existe caminho de escrita no Sankhya nem no ML neste código.
+# MODO controla a escrita no Sankhya:
+#   sombra     — só lê e monta o pedido; nunca grava
+#   manual     — grava parceiro + pedido 1090 só pelo botão do painel / POST .../gravar
+#   automatico — grava sozinho ao receber a notificação do ML
 
 name = "skyhub"
 main = "src/index.ts"
@@ -29,7 +31,7 @@ new_sqlite_classes = ["MeliToken", "Store"]
 crons = ["*/10 * * * *"]
 
 [vars]
-MODO = "sombra"
+MODO = "manual" # sombra | manual (grava só pelo botão) | automatico (grava pelo webhook)
 MELI_API = "https://api.mercadolibre.com"
 MELI_USER_ID = "3474041384"
 SANKHYA_API = "https://api.sankhya.com.br"

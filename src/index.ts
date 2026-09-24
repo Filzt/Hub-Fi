@@ -3,7 +3,7 @@
 import { TOPICOS_ACEITOS } from "./config.ts";
 import { tokenStub } from "./meli.ts";
 import { PAINEL_HTML } from "./painel.ts";
-import { processarEvento, processarPedido } from "./processamento.ts";
+import { gravarPedido, processarEvento, processarPedido } from "./processamento.ts";
 import { storeStub } from "./store.ts";
 import type { Env } from "./tipos.ts";
 
@@ -74,6 +74,15 @@ async function rotaApi(req: Request, env: Env, url: URL): Promise<Response> {
     } catch (e) {
       await store.log("erro", r[1], `processamento manual: ${(e as Error).message}`);
       return json({ erro: (e as Error).message }, 502);
+    }
+  }
+  r = m(/^\/api\/pedidos\/(\d+)\/gravar$/);
+  if (req.method === "POST" && r) {
+    // Grava parceiro (se novo) e pedido 1090 no Sankhya. Só em MODO manual/automatico.
+    try {
+      return json({ pedido: await gravarPedido(env, r[1]) });
+    } catch (e) {
+      return json({ erro: (e as Error).message }, 409);
     }
   }
   if (req.method === "GET" && p === "/api/eventos") {

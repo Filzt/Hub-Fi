@@ -33,6 +33,7 @@ export const RETRY = {
 export const TIMEOUT_MS = {
   meli: 15_000,
   sankhya: 30_000,
+  sankhyaEscrita: 90_000, // gateway processa até 2 min; incluirNota pode demorar
 } as const;
 
 // Tópicos do ML que o webhook aceita. Só orders_v2 é processado nesta fase;

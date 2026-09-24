@@ -31,7 +31,9 @@ export const PAINEL_HTML = /* html */ `<!doctype html>
   table { border-collapse:collapse; width:100%; min-width:760px }
   th, td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--bd); vertical-align:top }
   th { color:var(--mut); font-weight:600; font-size:12px } td.n { text-align:right; white-space:nowrap }
-  .s { font-weight:600 } .sombra_ok,.ok { color:var(--ok) } .divergente,.sem_base,.aguardando_pagamento,.pendente { color:var(--warn) }
+  .s { font-weight:600 } .no_erp,.gravado,.ok { color:var(--ok) } .pronto { color:var(--info) }
+  .divergente,.aguardando_pagamento,.pendente,.gravando { color:var(--warn) }
+  button.gravar { border-color:var(--info); color:var(--info); font-weight:600 }
   .bloqueado,.cancelado,.erro { color:var(--err) } .ignorado { color:var(--mut) }
   pre { white-space:pre-wrap; word-break:break-word; background:var(--bg); padding:10px; border-radius:6px; font-size:12px; margin:0 }
   .mut { color:var(--mut) } #msg { color:var(--err); margin:8px 0 }
@@ -61,6 +63,7 @@ const brl = (v) => Number(v ?? 0).toLocaleString("pt-BR", {style:"currency", cur
 const dt = (ms) => ms ? new Date(ms).toLocaleString("pt-BR") : "";
 let token = ""; try { token = sessionStorage.getItem("skyhub_tk") || ""; } catch {}
 let aba = "pedidos";
+let modo = "";
 
 async function api(caminho, opt = {}) {
   const r = await fetch(caminho, { ...opt, headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" } });
@@ -74,12 +77,13 @@ async function carregar() {
   $("#msg").textContent = "";
   try {
     const s = await api("/api/saude");
+    modo = s.modo;
     $("#modo").textContent = "· modo " + s.modo;
     const cont = (lista, k) => Object.fromEntries((lista || []).map((x) => [x[k], x.n]));
     const p = cont(s.store.pedidos, "situacao"), e = cont(s.store.eventos, "status");
     const cards = [
       ["Token ML", s.meli.semeado ? "expira " + dt(s.meli.expiraEm) : "NÃO SEMEADO"],
-      ["Sombra OK", p.sombra_ok || 0], ["Divergentes", p.divergente || 0],
+      ["Prontos p/ gravar", p.pronto || 0], ["No ERP", p.no_erp || 0], ["Divergentes", p.divergente || 0],
       ["Bloqueados", p.bloqueado || 0], ["Cancelados", p.cancelado || 0],
       ["Eventos com erro", e.erro || 0], ["Último evento", dt(s.store.ultimoEventoEm) || "—"],
     ];
@@ -90,12 +94,16 @@ async function carregar() {
 
 async function pedidos() {
   const d = await api("/api/pedidos");
-  $("#conteudo").innerHTML = "<table><thead><tr><th>Data ML</th><th>Chave</th><th>Situação</th><th>Total</th><th>Comissão</th><th>Frete</th><th>Parceiro</th><th>Base (TOP:NUNOTA)</th><th></th></tr></thead><tbody>" +
+  $("#conteudo").innerHTML = "<table><thead><tr><th>Data ML</th><th>Chave</th><th>Situação</th><th>Total</th><th>Comissão</th><th>Frete</th><th>Parceiro</th><th>ERP (TOP:NUNOTA)</th><th>Gravação</th><th></th></tr></thead><tbody>" +
     d.pedidos.map((p) => "<tr><td>" + esc(new Date(p.data_ml).toLocaleString("pt-BR")) + "</td><td>" + esc(p.chave) +
       '</td><td class="s ' + esc(p.situacao) + '">' + esc(p.situacao) + '</td><td class="n">' + brl(p.total) +
       '</td><td class="n">' + brl(p.comissao) + '</td><td class="n">' + brl(p.frete) + "</td><td>" + esc(p.codparc ?? "—") +
-      "</td><td>" + esc(p.nunotas_base ?? "—") + '</td><td><button data-ver="' + esc(p.chave) + '">detalhe</button> <button data-proc="' +
-      esc(p.order_ids.split(",")[0]) + '">reprocessar</button></td></tr>').join("") + "</tbody></table>";
+      "</td><td>" + esc(p.nunotas_base ?? "—") + '</td><td class="s ' + esc(p.gravacao || "") + '" title="' + esc(p.gravacao_erro || "") + '">' +
+      esc(p.gravacao ? p.gravacao + (p.nunota ? " " + p.nunota : "") : "—") +
+      '</td><td><button data-ver="' + esc(p.chave) + '">detalhe</button> <button data-proc="' + esc(p.order_ids.split(",")[0]) + '">reprocessar</button>' +
+      (p.situacao === "pronto" && modo !== "sombra" ? ' <button class="gravar" data-gravar="' + esc(p.order_ids.split(",")[0]) + '" data-chave="' + esc(p.chave) +
+        '" data-total="' + esc(brl(p.total)) + '">gravar no Sankhya</button>' : "") +
+      "</td></tr>").join("") + "</tbody></table>";
 }
 
 async function eventos() {
@@ -124,8 +132,17 @@ document.addEventListener("click", async (ev) => {
       const nota = d.pedido.nota_json ? JSON.stringify(JSON.parse(d.pedido.nota_json), null, 2) : "(nota não montada — ver bloqueio)";
       const tr = b.closest("tr"); const prox = tr.nextElementSibling;
       if (prox && prox.classList.contains("det")) return prox.remove();
-      tr.insertAdjacentHTML("afterend", '<tr class="det"><td colspan="9"><pre>' + esc(JSON.stringify(JSON.parse(d.pedido.analise_json), null, 2)) +
-        "</pre><p class=mut>incluirNota que SERIA enviado (não enviado — modo sombra):</p><pre>" + esc(nota) + "</pre></td></tr>");
+      tr.insertAdjacentHTML("afterend", '<tr class="det"><td colspan="10"><pre>' + esc(JSON.stringify(JSON.parse(d.pedido.analise_json), null, 2)) +
+        "</pre><p class=mut>incluirNota montado (CODPARC 0 = parceiro será criado na gravação):</p><pre>" + esc(nota) + "</pre></td></tr>");
+    }
+    if (b.dataset.gravar) {
+      if (!confirm("Gravar no Sankhya o pedido " + b.dataset.chave + " (" + b.dataset.total + ")?
+
+Cria o parceiro se for comprador novo e o pedido 1090.")) return;
+      b.disabled = true; b.textContent = "gravando...";
+      const d = await api("/api/pedidos/" + b.dataset.gravar + "/gravar", { method: "POST" });
+      alert("Gravado: NUNOTA " + (d.pedido.nunota ?? "?"));
+      return carregar();
     }
     if (b.dataset.proc) { b.disabled = true; await api("/api/pedidos/" + b.dataset.proc + "/processar", { method: "POST" }); return carregar(); }
     if (b.dataset.reabrir) { await api("/api/eventos/" + b.dataset.reabrir + "/reabrir", { method: "POST" }); return carregar(); }
