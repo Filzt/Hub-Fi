@@ -208,3 +208,50 @@ test("valida nfeProc autorizada modelo 55", async () => {
   assert.throws(() => validarNfeProc(nfe().slice(0, -20)), /cortado/);
   assert.throws(() => validarNfeProc("<NFe></NFe>"), /nfeProc/);
 });
+
+test("sync: quantidade, preço, pausado pelo vendedor e SKU duplicado", async () => {
+  const { planejar, precoAlvo } = await import("../src/sync.ts");
+  assert.equal(precoAlvo(1000, "gold_special"), 1193.6);
+  assert.equal(precoAlvo(null, "gold_special"), null);
+  const an = (id: string, sku: string, qtd: number, preco: number | null, extra = {}) =>
+    ({ item_id: id, sku, status: "active", sub_status: "", qtd_ml: qtd, preco_ml: preco, listing_type: "gold_special", ...extra });
+  const erp = new Map([
+    ["CEL1", { disp: 3, ativo: true, preco_loja: 1000 }],
+    ["CEL2", { disp: -2, ativo: true, preco_loja: 500 }],
+    ["CEL3", { disp: 5, ativo: false, preco_loja: 500 }],
+    ["CEL4", { disp: 2, ativo: true, preco_loja: 1000 }],
+    ["CEL5", { disp: 1, ativo: true, preco_loja: 2000 }],
+  ]);
+  const { acoes, alertas, ignorados } = planejar([
+    an("MLB1", "CEL1", 1, 1193.6),                                  // sobe 1→3, preço igual
+    an("MLB2", "CEL2", 2, 631.8),                                   // negativo → zera
+    an("MLB3", "CEL3", 1, 631.8),                                   // inativo → zera
+    an("MLB4", "CEL4", 0, 1100, { status: "paused", sub_status: "out_of_stock" }), // repõe + preço
+    an("MLB5", "CEL4", 2, 1193.6),                                  // duplicado → 0
+    an("MLB6", "CEL1", 0, null, { status: "paused", sub_status: "paused_by_seller" }), // nunca mexe
+    an("MLB7", "CEL5", 1, 1000),                                    // preço +140% → alerta
+    an("MLB8", "CEL9", 1, 10),                                      // SKU inexistente → não mexe
+  ], erp);
+  const por = Object.fromEntries(acoes.map((a) => [a.item_id, a]));
+  assert.equal(por.MLB1.qtd_para, 3); assert.equal(por.MLB1.preco_para, null);
+  assert.equal(por.MLB2.qtd_para, 0);
+  assert.equal(por.MLB3.qtd_para, 0); assert.match(por.MLB3.motivo, /inativo/);
+  assert.equal(por.MLB4.qtd_para, 2); assert.equal(por.MLB4.preco_para, 1193.6); assert.match(por.MLB4.motivo, /repor/);
+  assert.equal(por.MLB5.qtd_para, 0); assert.match(por.MLB5.motivo, /duplicado/);
+  assert.equal(por.MLB6, undefined);
+  assert.equal(por.MLB7, undefined);
+  assert.equal(por.MLB8, undefined);
+  assert.ok(alertas.some((x) => /140%|25%/.test(x)));
+  assert.ok(alertas.some((x) => /CEL9/.test(x)));
+  assert.ok(alertas.some((x) => /CEL4 em 2/.test(x)));
+  assert.equal(ignorados, 2);
+});
+
+test("sync: aborta leitura suspeita e zeragem em massa", async () => {
+  const { motivoParaAbortar } = await import("../src/sync.ts");
+  const z = (n: number) => Array.from({ length: n }, (_, i) => ({ item_id: "M" + i, sku: "S", qtd_de: 1, qtd_para: 0, preco_de: null, preco_para: null, motivo: "zerar" }));
+  assert.equal(motivoParaAbortar(z(2), { skusPedidos: 400, skusLidos: 400, comSaldo: 200, comSaldoAnterior: 210, maxZerar: 30 }), null);
+  assert.match(motivoParaAbortar(z(2), { skusPedidos: 400, skusLidos: 100, comSaldo: 200, comSaldoAnterior: 210, maxZerar: 30 })!, /suspeita/);
+  assert.match(motivoParaAbortar(z(31), { skusPedidos: 400, skusLidos: 400, comSaldo: 200, comSaldoAnterior: 210, maxZerar: 30 })!, /zerados/);
+  assert.match(motivoParaAbortar(z(0), { skusPedidos: 400, skusLidos: 400, comSaldo: 50, comSaldoAnterior: 210, maxZerar: 30 })!, /caíram/);
+});

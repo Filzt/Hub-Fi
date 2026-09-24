@@ -52,6 +52,7 @@ export const PAINEL_HTML = /* html */ `<!doctype html>
   <div class="tabs">
     <button data-aba="pedidos" class="ativo">Pedidos</button>
     <button data-aba="nfs">NF-e → ML</button>
+    <button data-aba="estoque">Estoque e preço</button>
     <button data-aba="eventos">Eventos</button>
     <button data-aba="log">Log</button>
     <button id="recarregar">Recarregar</button>
@@ -90,7 +91,7 @@ async function carregar() {
       ["Eventos com erro", e.erro || 0], ["Último evento", dt(s.store.ultimoEventoEm) || "—"],
     ];
     $("#cards").innerHTML = cards.map(([t, v]) => '<div class="card"><b>' + esc(v) + "</b><span>" + esc(t) + "</span></div>").join("");
-    await ({ pedidos, nfs, eventos, log })[aba]();
+    await ({ pedidos, nfs, estoque, eventos, log })[aba]();
   } catch (err) { $("#msg").textContent = err.message; }
 }
 
@@ -118,6 +119,20 @@ async function nfs() {
       "</td><td>" + esc(n.logistica ?? "—") + '</td><td class="s ' + esc(n.status) + '">' + esc(n.status) + '</td><td class="mut">' + esc(n.detalhe ?? "") +
       "</td><td>" + (n.status === "pronto" || n.status === "erro" ? '<button class="gravar" data-nf="' + esc(n.chave) + '">enviar XML</button>' : "") +
       "</td></tr>").join("") + "</tbody></table>";
+}
+
+async function estoque() {
+  const d = await api("/api/estoque");
+  const pl = d.plano;
+  const cab = '<p class="mut" style="padding:8px 12px;margin:0">Estoque: <b>' + esc(d.modos.estoque) + '</b> · Preço: <b>' + esc(d.modos.preco) +
+    '</b> · <button id="rodar-estoque">rodar agora</button>' +
+    (pl ? " · última rodada " + dt(pl.resumo.em) + " — " + pl.resumo.anuncios + " anúncios, " + pl.resumo.acoes + " mudanças no plano, " +
+      pl.resumo.aplicadas + " aplicadas" + (pl.resumo.abortado ? ' · <span class="erro">ABORTADA: ' + esc(pl.resumo.abortado) + "</span>" : "") : " · ainda não rodou") + "</p>";
+  const alertas = pl && pl.alertas.length ? '<pre style="margin:0 12px 8px">' + esc(pl.alertas.join("\n")) + "</pre>" : "";
+  const linhas = pl ? pl.acoes.map((a) => "<tr><td>" + esc(a.item_id) + "</td><td>" + esc(a.sku) + '</td><td class="n">' + esc(a.qtd_de) +
+    (a.qtd_para != null ? " → <b>" + esc(a.qtd_para) + "</b>" : "") + '</td><td class="n">' + (a.preco_de != null ? brl(a.preco_de) : "—") +
+    (a.preco_para != null ? " → <b>" + brl(a.preco_para) + "</b>" : "") + "</td><td>" + esc(a.motivo) + '</td><td class="mut">' + esc(a.resultado ?? (d.modos.estoque === "sombra" ? "planejado (sombra)" : "")) + "</td></tr>").join("") : "";
+  $("#conteudo").innerHTML = cab + alertas + "<table><thead><tr><th>Anúncio</th><th>SKU</th><th>Qtd ML → ERP</th><th>Preço ML → alvo</th><th>Motivo</th><th>Resultado</th></tr></thead><tbody>" + linhas + "</tbody></table>";
 }
 
 async function eventos() {
@@ -156,6 +171,7 @@ document.addEventListener("click", async (ev) => {
       alert("Gravado: NUNOTA " + (d.pedido.nunota ?? "?"));
       return carregar();
     }
+    if (b.id === "rodar-estoque") { b.disabled = true; b.textContent = "rodando..."; await api("/api/estoque/rodar", { method: "POST" }); return carregar(); }
     if (b.id === "varrer") { b.disabled = true; b.textContent = "varrendo..."; await api("/api/nfs/varrer", { method: "POST" }); return carregar(); }
     if (b.dataset.nf) {
       if (!confirm("Enviar ao Mercado Livre o XML da NF do pedido " + b.dataset.nf + "? Isso libera a etiqueta.")) return;

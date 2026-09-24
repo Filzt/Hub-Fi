@@ -4,7 +4,9 @@ import type { Store } from "./store.ts";
 export interface Env {
   MODO: string;
   XML_MODO: string;
-  CANCELAMENTO_MODO: string; // desligado | manual (só pelo painel) | automatico (ao receber o cancelamento do ML) // manual (só pelo painel) | automatico (cron envia)
+  CANCELAMENTO_MODO: string;
+  ESTOQUE_MODO: string; // sombra (só planeja) | automatico (aplica quantidade no ML)
+  PRECO_MODO: string; // sombra | automatico (aplica preço no ML) // desligado | manual (só pelo painel) | automatico (ao receber o cancelamento do ML) // manual (só pelo painel) | automatico (cron envia)
   MELI_API: string;
   MELI_USER_ID: string;
   SANKHYA_API: string;

@@ -102,6 +102,22 @@ export class Store extends DurableObject<Env> {
         tentativas INTEGER NOT NULL DEFAULT 0,
         atualizado_em INTEGER NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS anuncios (
+        item_id TEXT PRIMARY KEY,
+        sku TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL DEFAULT '',
+        sub_status TEXT NOT NULL DEFAULT '',
+        qtd_ml INTEGER NOT NULL DEFAULT 0,
+        preco_ml REAL,
+        listing_type TEXT NOT NULL DEFAULT '',
+        lido_em INTEGER NOT NULL DEFAULT 0,
+        ultima_acao TEXT,
+        acao_em INTEGER
+      );
+      CREATE TABLE IF NOT EXISTS meta (
+        chave TEXT PRIMARY KEY,
+        valor TEXT
+      );
       CREATE TABLE IF NOT EXISTS travas (
         nome TEXT PRIMARY KEY,
         ate INTEGER NOT NULL
@@ -175,6 +191,56 @@ export class Store extends DurableObject<Env> {
   /** Resultado do cancelamento no ERP (texto curto: "cancelado: ...", "faturado: ..."). */
   marcarCancelamento(chave: string, texto: string): void {
     this.sql.exec(`UPDATE pedidos SET cancelamento = ?, cancelamento_em = ? WHERE chave = ?`, texto.slice(0, 500), Date.now(), chave);
+  }
+
+  meta(chave: string): string | null {
+    return this.sql.exec<{ valor: string }>(`SELECT valor FROM meta WHERE chave = ?`, chave).toArray()[0]?.valor ?? null;
+  }
+
+  setMeta(chave: string, valor: string): void {
+    this.sql.exec(`INSERT INTO meta (chave, valor) VALUES (?, ?) ON CONFLICT(chave) DO UPDATE SET valor = excluded.valor`, chave, valor);
+  }
+
+  /** Ids ativos/pausados da conta: insere os novos e marca como "fora" quem sumiu. */
+  registrarIdsAnuncios(ids: string[]): void {
+    const set = new Set(ids);
+    for (const id of ids) this.sql.exec(`INSERT OR IGNORE INTO anuncios (item_id, lido_em) VALUES (?, 0)`, id);
+    for (const r of this.sql.exec<{ item_id: string }>(`SELECT item_id FROM anuncios WHERE status <> 'fora'`).toArray()) {
+      if (!set.has(r.item_id)) this.sql.exec(`UPDATE anuncios SET status = 'fora' WHERE item_id = ?`, r.item_id);
+    }
+  }
+
+  idsParaReler(limite: number): string[] {
+    return this.sql
+      .exec<{ item_id: string }>(`SELECT item_id FROM anuncios WHERE status <> 'fora' ORDER BY lido_em ASC LIMIT ?`, limite)
+      .toArray().map((r) => r.item_id);
+  }
+
+  salvarAnuncios(lista: Array<{ item_id: string; sku: string; status: string; sub_status: string; qtd_ml: number; preco_ml: number | null; listing_type: string }>): void {
+    const agora = Date.now();
+    for (const a of lista) {
+      this.sql.exec(
+        `INSERT INTO anuncios (item_id, sku, status, sub_status, qtd_ml, preco_ml, listing_type, lido_em)
+         VALUES (?,?,?,?,?,?,?,?)
+         ON CONFLICT(item_id) DO UPDATE SET sku=excluded.sku, status=excluded.status, sub_status=excluded.sub_status,
+           qtd_ml=excluded.qtd_ml, preco_ml=excluded.preco_ml, listing_type=excluded.listing_type, lido_em=excluded.lido_em`,
+        a.item_id, a.sku, a.status, a.sub_status, a.qtd_ml, a.preco_ml, a.listing_type, agora,
+      );
+    }
+  }
+
+  anunciosAtivos() {
+    return this.sql
+      .exec(`SELECT item_id, sku, status, sub_status, qtd_ml, preco_ml, listing_type FROM anuncios
+             WHERE status IN ('active','paused') AND lido_em > 0`)
+      .toArray();
+  }
+
+  registrarAcaoAnuncio(item_id: string, texto: string, qtd: number | null, preco: number | null): void {
+    this.sql.exec(
+      `UPDATE anuncios SET ultima_acao = ?, acao_em = ?, qtd_ml = COALESCE(?, qtd_ml), preco_ml = COALESCE(?, preco_ml) WHERE item_id = ?`,
+      texto.slice(0, 500), Date.now(), qtd, preco, item_id,
+    );
   }
 
   /**

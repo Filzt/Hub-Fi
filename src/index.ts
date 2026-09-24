@@ -4,6 +4,7 @@ import { TOPICOS_ACEITOS } from "./config.ts";
 import { tokenStub } from "./meli.ts";
 import { PAINEL_HTML } from "./painel.ts";
 import { cancelarNoErp, confirmarPedidoErp, gravarPedido, processarEvento, processarPedido } from "./processamento.ts";
+import { sincronizarEstoque } from "./estoque.ts";
 import { processarNf, varrerNfs } from "./nf.ts";
 import { storeStub } from "./store.ts";
 import type { Env } from "./tipos.ts";
@@ -101,6 +102,18 @@ async function rotaApi(req: Request, env: Env, url: URL): Promise<Response> {
       return json({ erro: (e as Error).message }, 409);
     }
   }
+  // Estoque e preço --------------------------------------------------------------
+  if (req.method === "GET" && p === "/api/estoque") {
+    const plano = await store.meta("ultimo_plano");
+    return json({ modos: { estoque: env.ESTOQUE_MODO, preco: env.PRECO_MODO }, plano: plano ? JSON.parse(plano) : null });
+  }
+  if (req.method === "POST" && p === "/api/estoque/rodar") {
+    try {
+      return json(await sincronizarEstoque(env, { forcarCatalogo: url.searchParams.get("catalogo") === "1" }));
+    } catch (e) {
+      return json({ erro: (e as Error).message }, 502);
+    }
+  }
   // NF-e → ML --------------------------------------------------------------------
   if (req.method === "GET" && p === "/api/nfs") return json({ xmlModo: env.XML_MODO, nfs: await store.listarNfs() });
   if (req.method === "POST" && p === "/api/nfs/varrer") {
@@ -189,6 +202,11 @@ export default {
       await varrerNfs(env, env.XML_MODO === "automatico");
     } catch (e) {
       await store.log("erro", null, `varredura de NF falhou: ${(e as Error).message}`);
+    }
+    try {
+      await sincronizarEstoque(env);
+    } catch (e) {
+      await store.log("erro", null, `sincronização de estoque/preço falhou: ${(e as Error).message}`);
     }
   },
 } satisfies ExportedHandler<Env>;

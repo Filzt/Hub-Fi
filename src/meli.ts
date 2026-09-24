@@ -100,17 +100,28 @@ function tokenStub(env: Env) {
   return env.MELI_TOKEN.get(env.MELI_TOKEN.idFromName("principal"));
 }
 
+// Cache do access token no isolate: cada ida ao Durable Object conta como
+// subrequest, e uma rodada de estoque faz dezenas de chamadas ao ML.
+let tokenCache: { valor: string; ate: number } | null = null;
+
+async function tokenAtual(env: Env, forcar: boolean): Promise<string> {
+  if (!forcar && tokenCache && tokenCache.ate > Date.now()) return tokenCache.valor;
+  const stub = tokenStub(env);
+  const valor = forcar ? await stub.forcarRenovacao() : await stub.accessToken();
+  tokenCache = { valor, ate: Date.now() + 4 * 60_000 };
+  return valor;
+}
+
 /** GET autenticado na API do ML. 5xx/429/rede = temporário; 4xx = definitivo. */
 export async function meliGet<T = unknown>(
   env: Env,
   caminho: string,
   headers: Record<string, string> = {},
 ): Promise<T> {
-  const stub = tokenStub(env);
   for (let tentativa = 0; tentativa < 2; tentativa++) {
     let token: string;
     try {
-      token = tentativa === 0 ? await stub.accessToken() : await stub.forcarRenovacao();
+      token = await tokenAtual(env, tentativa > 0);
     } catch (e) {
       // A classe do erro não atravessa o RPC do Durable Object: reclassifica pela mensagem.
       const msg = (e as Error).message;
@@ -154,11 +165,10 @@ export async function meliEnviar(
   corpo: BodyInit,
   contentType?: string,
 ): Promise<{ status: number; corpo: any }> {
-  const stub = tokenStub(env);
   for (let tentativa = 0; tentativa < 2; tentativa++) {
     let token: string;
     try {
-      token = tentativa === 0 ? await stub.accessToken() : await stub.forcarRenovacao();
+      token = await tokenAtual(env, tentativa > 0);
     } catch (e) {
       const msg = (e as Error).message;
       if (/não semeado|recusada: HTTP 4/.test(msg)) throw new ErroDefinitivo(msg);
