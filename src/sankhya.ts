@@ -15,6 +15,19 @@ import { type Env, ErroDefinitivo, ErroTemporario } from "./tipos.ts";
 
 let cache: { token: string; expira: number } | null = null;
 
+// O gateway recusa duas chamadas simultâneas com o mesmo token ("O serviço foi cancelado
+// por situação de concorrência. Essa mesma sessão HTTP fez a requisição duas vezes
+// simultaneamente" — visto em 24/09/2026 com webhook e cron rodando juntos). Todas as
+// chamadas deste isolate passam por esta fila, uma de cada vez.
+let fila: Promise<unknown> = Promise.resolve();
+function emFila<T>(fn: () => Promise<T>): Promise<T> {
+  const vez = fila.then(fn, fn);
+  fila = vez.catch(() => undefined);
+  return vez;
+}
+const concorrencia = (m: string) => /concorr[eê]ncia|duas vezes simultaneamente/i.test(m);
+const esperar = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 async function token(env: Env): Promise<string> {
   if (cache && cache.expira > Date.now()) return cache.token;
   let r: Response;
@@ -50,6 +63,17 @@ export type Linha = Record<string, unknown>;
 /** Executa um SELECT e devolve as linhas como objetos {COLUNA: valor}. */
 export async function consultar(env: Env, sql: string): Promise<Linha[]> {
   if (!/^\s*SELECT\s/i.test(sql)) throw new ErroDefinitivo("sankhya.consultar só executa SELECT");
+  for (let t = 0; ; t++) {
+    try {
+      return await emFila(() => consultarUmaVez(env, sql));
+    } catch (e) {
+      if (t < 2 && e instanceof ErroTemporario && concorrencia(e.message)) { await esperar(400 + Math.random() * 600); continue; }
+      throw e;
+    }
+  }
+}
+
+async function consultarUmaVez(env: Env, sql: string): Promise<Linha[]> {
   let r: Response;
   try {
     r = await fetch(
@@ -72,7 +96,12 @@ export async function consultar(env: Env, sql: string): Promise<Linha[]> {
     | { status?: string; statusMessage?: string; responseBody?: { fieldsMetadata?: { name: string }[]; rows?: unknown[][] } }
     | null;
   if (!d) throw new ErroTemporario(`Sankhya executeQuery: resposta não-JSON (HTTP ${r.status})`);
-  if (String(d.status) !== "1") throw new ErroDefinitivo(`Sankhya: ${d.statusMessage ?? "erro sem mensagem"}`);
+  if (String(d.status) !== "1") {
+    const msg = `Sankhya: ${d.statusMessage ?? "erro sem mensagem"}`;
+    // status 3/4 (timeout, concorrência) não executou nada: vale tentar de novo.
+    if (String(d.status) === "3" || String(d.status) === "4" || concorrencia(msg)) throw new ErroTemporario(msg);
+    throw new ErroDefinitivo(msg);
+  }
   const cols = (d.responseBody?.fieldsMetadata ?? []).map((c) => c.name);
   const linhas = d.responseBody?.rows ?? [];
   // O DbExplorer corta em 5.000 linhas sem avisar: consultas aqui são pontuais.
@@ -104,6 +133,17 @@ function mensagem(d: Envelope): string {
 }
 
 async function servico(env: Env, modulo: "mge" | "mgecom", serviceName: string, requestBody: unknown): Promise<any> {
+  for (let t = 0; ; t++) {
+    try {
+      return await emFila(() => servicoUmaVez(env, modulo, serviceName, requestBody));
+    } catch (e) {
+      if (t < 2 && e instanceof ErroTemporario && concorrencia(e.message)) { await esperar(400 + Math.random() * 600); continue; }
+      throw e;
+    }
+  }
+}
+
+async function servicoUmaVez(env: Env, modulo: "mge" | "mgecom", serviceName: string, requestBody: unknown): Promise<any> {
   let r: Response;
   try {
     r = await fetch(`${env.SANKHYA_API}/gateway/v1/${modulo}/service.sbr?serviceName=${serviceName}&outputType=json`, {
@@ -123,7 +163,7 @@ async function servico(env: Env, modulo: "mge" | "mgecom", serviceName: string, 
   const d = (await r.json().catch(() => null)) as Envelope | null;
   if (!d) throw new ErroTemporario(`Sankhya ${serviceName}: resposta não-JSON (HTTP ${r.status})`);
   const st = String(d.status);
-  if (st === "3" || st === "4") throw new ErroTemporario(`Sankhya ${serviceName}: status ${st} — ${mensagem(d)}`);
+  if (st === "3" || st === "4" || concorrencia(mensagem(d))) throw new ErroTemporario(`Sankhya ${serviceName}: status ${st} — ${mensagem(d)}`);
   if (st !== "1") throw new ErroDefinitivo(`Sankhya ${serviceName}: ${mensagem(d)}`);
   return d.responseBody ?? {};
 }
