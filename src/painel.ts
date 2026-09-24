@@ -128,7 +128,7 @@ async function estoque() {
     '</b> · <button id="rodar-estoque">rodar agora</button>' +
     (pl ? " · última rodada " + dt(pl.resumo.em) + " — " + pl.resumo.anuncios + " anúncios, " + pl.resumo.acoes + " mudanças no plano, " +
       pl.resumo.aplicadas + " aplicadas" + (pl.resumo.abortado ? ' · <span class="erro">ABORTADA: ' + esc(pl.resumo.abortado) + "</span>" : "") : " · ainda não rodou") + "</p>";
-  const alertas = pl && pl.alertas.length ? '<pre style="margin:0 12px 8px">' + esc(pl.alertas.join("\n")) + "</pre>" : "";
+  const alertas = pl && pl.alertas.length ? '<pre style="margin:0 12px 8px">' + pl.alertas.map(esc).join("<br>") + "</pre>" : "";
   const linhas = pl ? pl.acoes.map((a) => "<tr><td>" + esc(a.item_id) + "</td><td>" + esc(a.sku) + '</td><td class="n">' + esc(a.qtd_de) +
     (a.qtd_para != null ? " → <b>" + esc(a.qtd_para) + "</b>" : "") + '</td><td class="n">' + (a.preco_de != null ? brl(a.preco_de) : "—") +
     (a.preco_para != null ? " → <b>" + brl(a.preco_para) + "</b>" : "") + "</td><td>" + esc(a.motivo) + '</td><td class="mut">' + esc(a.resultado ?? (d.modos.estoque === "sombra" ? "planejado (sombra)" : "")) + "</td></tr>").join("") : "";
