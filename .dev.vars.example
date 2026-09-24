@@ -1,0 +1,8 @@
+# Copie para .dev.vars (ignorado pelo git) só para `npm run dev` local.
+# Em produção os valores vão como Secrets do Worker, nunca em arquivo.
+MELI_CLIENT_ID=
+MELI_CLIENT_SECRET=
+SANKHYA_CLIENT_ID=
+SANKHYA_CLIENT_SECRET=
+SANKHYA_XTOKEN=
+ADMIN_TOKEN=

@@ -1,0 +1,15 @@
+node_modules/
+.wrangler/
+.dist/
+.dev.vars
+.env
+.env.*
+!.dev.vars.example
+
+# Dado real nunca entra no repositório
+*.xlsx
+*.xls
+*.csv
+*.xml
+*.pdf
+*.zpl

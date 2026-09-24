@@ -1,0 +1,40 @@
+# skyhub — integração Mercado Livre <-> Sankhya da Skyline.
+# Fase atual: SOMBRA. Lê ML e Sankhya, monta o pedido, compara com o que a Base
+# gravou. NÃO existe caminho de escrita no Sankhya nem no ML neste código.
+
+name = "skyhub"
+main = "src/index.ts"
+compatibility_date = "2026-09-01"
+
+[observability]
+enabled = true
+
+# Estado em Durable Objects com SQLite: não exige criar D1/Queue/R2 antes do
+# primeiro deploy (o build do GitHub funciona sem provisionamento manual).
+[[durable_objects.bindings]]
+name = "MELI_TOKEN"
+class_name = "MeliToken"
+
+[[durable_objects.bindings]]
+name = "STORE"
+class_name = "Store"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["MeliToken", "Store"]
+
+# Reprocessa eventos pendentes/com erro (retry com backoff) — rede de segurança
+# para o webhook, que o ML descarta após 1 h de tentativas.
+[triggers]
+crons = ["*/10 * * * *"]
+
+[vars]
+MODO = "sombra"
+MELI_API = "https://api.mercadolibre.com"
+MELI_USER_ID = "3474041384"
+SANKHYA_API = "https://api.sankhya.com.br"
+
+# Segredos (nunca aqui — `npx wrangler secret put <NOME>` ou painel da Cloudflare):
+#   MELI_CLIENT_ID, MELI_CLIENT_SECRET
+#   SANKHYA_CLIENT_ID, SANKHYA_CLIENT_SECRET, SANKHYA_XTOKEN
+#   ADMIN_TOKEN  (protege /api e o painel)
