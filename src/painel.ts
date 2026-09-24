@@ -102,6 +102,7 @@ async function pedidos() {
       '</td><td class="n">' + brl(p.comissao) + '</td><td class="n">' + brl(p.frete) + "</td><td>" + esc(p.codparc ?? "—") +
       "</td><td>" + esc(p.nunotas_base ?? "—") + '</td><td class="s ' + esc(p.gravacao || "") + '" title="' + esc(p.gravacao_erro || "") + '">' +
       esc(p.gravacao ? p.gravacao + (p.nunota ? " " + p.nunota : "") : "—") +
+      (p.cancelamento ? '<br><span class="mut" title="' + esc(p.cancelamento) + '">' + esc(p.cancelamento.split(":")[0]) + "</span>" : "") +
       '</td><td><button data-ver="' + esc(p.chave) + '">detalhe</button> <button data-proc="' + esc(p.order_ids.split(",")[0]) + '">reprocessar</button>' +
       (p.situacao === "pronto" && modo !== "sombra" ? ' <button class="gravar" data-gravar="' + esc(p.order_ids.split(",")[0]) + '" data-chave="' + esc(p.chave) +
         '" data-total="' + esc(brl(p.total)) + '">gravar no Sankhya</button>' : "") +

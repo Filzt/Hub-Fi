@@ -32,7 +32,7 @@ import {
   soDigitos,
   sqlTexto,
 } from "./nota.ts";
-import { confirmarNota, consultar, incluirNota, salvarEndereco, salvarParceiro } from "./sankhya.ts";
+import { cancelarNota, confirmarNota, consultar, incluirNota, salvarEndereco, salvarParceiro } from "./sankhya.ts";
 import { type Evento, type Pedido, storeStub } from "./store.ts";
 import { type Env, ErroDefinitivo, ErroTemporario } from "./tipos.ts";
 
@@ -195,6 +195,10 @@ export async function processarPedido(env: Env, orderId: string): Promise<Pedido
   await store.salvarPedido(a.pedido);
   await store.log(nivel(a.pedido.situacao), a.pedido.chave, resumo(a));
   if (env.MODO === "automatico" && a.pedido.situacao === "pronto") return gravarPedido(env, orderId, a);
+  if (env.CANCELAMENTO_MODO === "automatico" && a.pedido.situacao === "cancelado" && a.pedido.nunotas_base) {
+    await cancelarNoErp(env, orderId, a);
+    return ((await store.pedido(a.pedido.chave)) as Pedido | null) ?? a.pedido;
+  }
   return a.pedido;
 }
 
@@ -310,6 +314,67 @@ export async function processarEvento(env: Env, ev: Evento): Promise<void> {
     const temporario = !(erro instanceof ErroDefinitivo);
     await store.concluirEvento(ev.id, { ok: false, temporario, erro: erro.message });
     await store.log("erro", m[1], `${erro.name}: ${erro.message}`);
+  }
+}
+
+/**
+ * Venda cancelada no ML → cancela no Sankhya o pedido 1090 que ainda NÃO foi faturado.
+ * Só age se TODAS as condições valerem (qualquer dúvida vira alerta, nunca ação):
+ *   - todas as orders do pack estão "cancelled" no ML (lidas agora pela análise);
+ *   - existe exatamente 1 pedido 1090 com esse número do ML;
+ *   - não há NF: nenhuma 1130 com o número, nenhum vínculo na TGFVAR e PENDENTE='S'.
+ * Confirma pela leitura: o pedido tem de sair da TGFCAB e aparecer na TGFCAN.
+ */
+export async function cancelarNoErp(env: Env, orderId: string, analise?: Analise): Promise<{ acao: string; detalhe: string }> {
+  if (env.CANCELAMENTO_MODO !== "manual" && env.CANCELAMENTO_MODO !== "automatico") {
+    return { acao: "desligado", detalhe: `CANCELAMENTO_MODO=${env.CANCELAMENTO_MODO}` };
+  }
+  const store = storeStub(env);
+  const a = analise ?? (await analisarPedido(env, orderId));
+  await store.salvarPedido(a.pedido);
+  const chave = a.pedido.chave;
+  const fim = async (acao: string, detalhe: string, nivelLog: "info" | "aviso" | "erro" = "aviso") => {
+    await store.marcarCancelamento(chave, `${acao}: ${detalhe}`);
+    await store.log(nivelLog, chave, `cancelamento no ERP — ${acao}: ${detalhe}`);
+    return { acao, detalhe };
+  };
+
+  const status = a.pedido.status_ml.split(",");
+  if (!status.every((s) => s === "cancelled")) {
+    return status.some((s) => s === "cancelled")
+      ? fim("parcial", `pack com orders em ${a.pedido.status_ml} — não cancelo, revisar à mão`)
+      : { acao: "nada", detalhe: "pedido não está cancelado no ML" };
+  }
+
+  const docs = await documentosNoErp(env, a.observacoes);
+  const pedidos = docs.filter((d) => d.CODTIPOPER === 1090);
+  if (!pedidos.length) return { acao: "nada", detalhe: "sem pedido 1090 no Sankhya" };
+  if (pedidos.length > 1) return fim("alerta", `${pedidos.length} pedidos 1090 com esse número — revisar à mão`);
+  const nunota = pedidos[0].NUNOTA;
+
+  const nf1130 = docs.filter((d) => d.CODTIPOPER === 1130).map((d) => d.NUNOTA);
+  const vinc = await consultar(env, `SELECT NUNOTA FROM TGFVAR WHERE NUNOTAORIG = ${nunota}`);
+  const cab = (await consultar(env, `SELECT PENDENTE FROM TGFCAB WHERE NUNOTA = ${nunota}`))[0];
+  if (nf1130.length || vinc.length || cab?.PENDENTE !== "S") {
+    const nfs = [...new Set([...nf1130, ...vinc.map((v) => Number(v.NUNOTA))])].join(",") || `PENDENTE=${cab?.PENDENTE}`;
+    return fim("faturado", `pedido ${nunota} já faturado (NF ${nfs}) — cancelamento/devolução da NF é com o fiscal`);
+  }
+
+  const trava = `cancelar:${chave}`;
+  if (!(await store.travar(trava, 2 * 60_000))) throw new ErroTemporario(`cancelamento de ${chave} já em andamento`);
+  try {
+    let erro = "";
+    try {
+      await cancelarNota(env, nunota, `CANCELADO NO MERCADO LIVRE - ${chave}`);
+    } catch (e) {
+      erro = (e as Error).message;
+    }
+    const naCab = await consultar(env, `SELECT NUNOTA FROM TGFCAB WHERE NUNOTA = ${nunota}`);
+    const naCan = await consultar(env, `SELECT NUNOTA FROM TGFCAN WHERE NUNOTA = ${nunota}`);
+    if (!naCab.length && naCan.length) return fim("cancelado", `pedido ${nunota} cancelado no Sankhya (TGFCAN)`, "info");
+    return fim("erro", `pedido ${nunota} NÃO cancelado${erro ? ` — ${erro}` : " (continua na TGFCAB)"}`, "erro");
+  } finally {
+    await store.destravar(trava);
   }
 }
 

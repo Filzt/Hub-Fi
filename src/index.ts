@@ -3,7 +3,7 @@
 import { TOPICOS_ACEITOS } from "./config.ts";
 import { tokenStub } from "./meli.ts";
 import { PAINEL_HTML } from "./painel.ts";
-import { confirmarPedidoErp, gravarPedido, processarEvento, processarPedido } from "./processamento.ts";
+import { cancelarNoErp, confirmarPedidoErp, gravarPedido, processarEvento, processarPedido } from "./processamento.ts";
 import { processarNf, varrerNfs } from "./nf.ts";
 import { storeStub } from "./store.ts";
 import type { Env } from "./tipos.ts";
@@ -91,6 +91,15 @@ async function rotaApi(req: Request, env: Env, url: URL): Promise<Response> {
     const res = await confirmarPedidoErp(env, Number(r[1]));
     await store.log(res.ok ? "info" : "aviso", null, `confirmar NUNOTA ${r[1]}: ${res.ok ? "ok (L)" : res.motivo}`);
     return json(res, res.ok ? 200 : 409);
+  }
+  r = m(/^\/api\/pedidos\/(\d+)\/cancelar-erp$/);
+  if (req.method === "POST" && r) {
+    try {
+      const res = await cancelarNoErp(env, r[1]);
+      return json(res, res.acao === "cancelado" || res.acao === "nada" ? 200 : 409);
+    } catch (e) {
+      return json({ erro: (e as Error).message }, 409);
+    }
   }
   // NF-e → ML --------------------------------------------------------------------
   if (req.method === "GET" && p === "/api/nfs") return json({ xmlModo: env.XML_MODO, nfs: await store.listarNfs() });

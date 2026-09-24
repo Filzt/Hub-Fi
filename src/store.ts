@@ -116,7 +116,8 @@ export class Store extends DurableObject<Env> {
     `);
     // Migração: colunas de gravação (SQLite não tem ADD COLUMN IF NOT EXISTS).
     const cols = new Set(this.sql.exec<{ name: string }>(`PRAGMA table_info(pedidos)`).toArray().map((c) => c.name));
-    for (const [nome, tipo] of [["nunota", "INTEGER"], ["gravacao", "TEXT"], ["gravacao_em", "INTEGER"], ["gravacao_erro", "TEXT"]]) {
+    for (const [nome, tipo] of [["nunota", "INTEGER"], ["gravacao", "TEXT"], ["gravacao_em", "INTEGER"], ["gravacao_erro", "TEXT"],
+                                ["cancelamento", "TEXT"], ["cancelamento_em", "INTEGER"]]) {
       if (!cols.has(nome)) this.sql.exec(`ALTER TABLE pedidos ADD COLUMN ${nome} ${tipo}`);
     }
   }
@@ -169,6 +170,11 @@ export class Store extends DurableObject<Env> {
 
   listarNfs(limite = 200): Nf[] {
     return this.sql.exec<Nf>(`SELECT * FROM nfs ORDER BY atualizado_em DESC LIMIT ?`, limite).toArray();
+  }
+
+  /** Resultado do cancelamento no ERP (texto curto: "cancelado: ...", "faturado: ..."). */
+  marcarCancelamento(chave: string, texto: string): void {
+    this.sql.exec(`UPDATE pedidos SET cancelamento = ?, cancelamento_em = ? WHERE chave = ?`, texto.slice(0, 500), Date.now(), chave);
   }
 
   /**
@@ -260,7 +266,7 @@ export class Store extends DurableObject<Env> {
     return this.sql
       .exec(
         `SELECT chave, order_ids, data_ml, status_ml, situacao, total, comissao, frete, codparc,
-                nunotas_base, atualizado_em, nunota, gravacao, gravacao_em, gravacao_erro
+                nunotas_base, atualizado_em, nunota, gravacao, gravacao_em, gravacao_erro, cancelamento, cancelamento_em
          FROM pedidos ORDER BY data_ml DESC LIMIT ?`,
         limite,
       )

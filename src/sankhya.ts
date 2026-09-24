@@ -204,3 +204,21 @@ export async function lerXmlNfe(env: Env, nunota: number): Promise<string> {
   if (xml.length !== total) throw new ErroDefinitivo(`XML da NF ${nunota} lido com ${xml.length} de ${total} caracteres`);
   return xml;
 }
+
+/**
+ * Cancela um pedido/nota confirmado (CACSP.cancelarNota, mgecom — serviço oficial,
+ * doc "Cancelamento de Movimentos" lida em 24/09/2026). O documento sai da TGFCAB
+ * e vai para a TGFCAN com a justificativa. validarProcessosWmsEmAndamento=true faz o
+ * Sankhya recusar se o WMS já estiver separando. IRREVERSÍVEL.
+ */
+export async function cancelarNota(env: Env, nunota: number, justificativa: string): Promise<number> {
+  if (!Number.isInteger(nunota) || nunota <= 0) throw new ErroDefinitivo(`NUNOTA inválido: ${nunota}`);
+  const rb = await servico(env, "mgecom", "CACSP.cancelarNota", {
+    notasCanceladas: {
+      nunota: [{ $: String(nunota) }],
+      justificativa: justificativa.slice(0, 200),
+      validarProcessosWmsEmAndamento: "true",
+    },
+  });
+  return Number(rb?.resultadoCancelamento?.totalNotasCanceladas ?? 0);
+}
