@@ -176,3 +176,7 @@ tr.sel td { background: var(--info-bg); }
 .qtd { min-width: 22px; padding: 1px 7px; border-radius: 10px; background: #ffffff1f; color: var(--lat-tx); font-size: 12px; font-weight: 600; text-align: center; }
 .qtd:empty { display: none; }
 .qtd.alta { background: var(--info); color: #fff; }
+
+/* Botão de atualizar só com ícone + hora da última atualização */
+button.icone { padding: 4px 10px; font-size: 17px; line-height: 1.2; min-width: 34px; }
+.atualizado { font-size: 12px; white-space: nowrap; }

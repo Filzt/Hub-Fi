@@ -32,6 +32,14 @@ async function api(caminho, opt = {}) {
 }
 const post = (caminho, corpo) => api(caminho, { method: "POST", body: corpo ? JSON.stringify(corpo) : undefined });
 
+// Botão de atualizar só com o ícone: as telas de Pedidos e Expedição já se atualizam
+// sozinhas a cada minuto; o botão serve para forçar na hora.
+const AUTO_MS = 60_000;
+const btnAtualizar = (id, titulo) =>
+  '<button id="' + id + '" type="button" class="icone" title="' + esc(titulo) + '" aria-label="' + esc(titulo) + '">↻</button>' +
+  '<span class="atualizado mut" data-atualizado>atualizado ' + esc(hora(Date.now())) + "</span>";
+const marcarAtualizado = () => $$("[data-atualizado]").forEach((el) => { el.textContent = "atualizado " + hora(Date.now()); });
+
 function erro(e) { $("#msg").textContent = e && e.message ? e.message : String(e); }
 function limparErro() { $("#msg").textContent = ""; }
 
@@ -97,7 +105,7 @@ async function renderPedidos() {
     '<label for="dias" class="mut">Período</label><select id="dias">' +
     [1, 7, 15, 30].map((n) => '<option value="' + n + '"' + (n === estado.fluxoDias ? " selected" : "") + ">" + (n === 1 ? "últimas 24 h" : "últimos " + n + " dias") + "</option>").join("") +
     '</select><input id="busca-ped" type="search" placeholder="nº do ML ou NUNOTA" value="' + esc(estado.busca) + '" aria-label="Buscar pedido">' +
-    '<span class="espaco"></span><button id="recarregar-ped" type="button">Atualizar</button></div>';
+    '<span class="espaco"></span>' + btnAtualizar("recarregar-ped", "Atualizar agora (a tela já se atualiza a cada minuto)") + "</div>";
   const colunas = d.fases.map((f) => {
     const lista = porFase[f];
     const imprimiveis = lista.filter((p) => p.shipment_id && (p.envio_substatus === "ready_to_print" || p.envio_substatus === "printed"));
@@ -273,10 +281,10 @@ async function renderExpedicao(sub) {
   const prontas = d.etiquetas.filter((e) => e.substatus === "ready_to_print").length;
   $("#conteudo").innerHTML =
     '<div class="bipe"><label for="bipe">Bipar etiqueta</label><input id="bipe" inputmode="numeric" autocomplete="off" placeholder="leia o código do pedido">' +
-    '<button type="button" id="limpar-bipe">Limpar</button><button type="button" id="atualizar-exp">Atualizar lista</button>' +
+    '<button type="button" id="limpar-bipe">Limpar</button>' + btnAtualizar("atualizar-exp", "Atualizar agora: relê os envios no Mercado Livre (a tela já se atualiza a cada minuto)") +
     '<span class="dica">Aceita nº do pedido do ML, nº do envio, chave ou número da NF. O 1º bipe localiza; bipar de novo (ou Enter) imprime.</span></div>' +
     '<div id="resultado-bipe"></div>' +
-    '<div class="cards"><div class="card"><b>' + prontas + '</b><span>Para imprimir</span></div><div class="card"><b>' + (d.etiquetas.length - prontas) + '</b><span>Impressas, aguardando despacho</span></div></div>' +
+    '<div class="cards"><div class="card"><b id="n-prontas">' + prontas + '</b><span>Para imprimir</span></div><div class="card"><b id="n-impressas">' + (d.etiquetas.length - prontas) + '</b><span>Impressas, aguardando despacho</span></div></div>' +
     (expedicao.fase === "despachados" ? '<p class="dica">Despachados hoje: o ML registrou a entrada do pacote na agência ou coleta.</p>' : "") +
     (expedicao.fase === "agendados" ? '<p class="dica">Agendados pelo Mercado Livre: a etiqueta só é liberada na data indicada. Separe a caixa e aguarde; a NF sobe sozinha quando o ML liberar.</p>' : "") +
     '<div class="acoes-sel"' + (soLista ? " hidden" : "") + '><button type="button" class="primario" id="imprimir-sel" disabled>Imprimir selecionadas</button><span class="dica" id="info-sel"></span></div>' +
@@ -324,7 +332,10 @@ async function renderExpedicao(sub) {
     } catch (e) { erro(e); campo.value = ""; }
   });
   $("#limpar-bipe").onclick = () => { expedicao.achado = null; expedicao.ultimoBipe = ""; campo.value = ""; desenharExpedicao(); campo.focus(); };
-  $("#atualizar-exp").onclick = async (e) => { e.target.disabled = true; await post("/api/etiquetas/atualizar"); navegar(); };
+  $("#atualizar-exp").onclick = async (e) => {
+    e.target.disabled = true;
+    try { await post("/api/etiquetas/atualizar"); await recarregarExpedicao(); } catch (x) { erro(x); } finally { e.target.disabled = false; }
+  };
 }
 
 function localizar(codigo) {
@@ -342,7 +353,7 @@ function localizar(codigo) {
     $("#imprimir-achado").onclick = () => imprimirExpedicao(e).catch(erro);
   } else {
     alvo.innerHTML = '<div class="nao-achado">' + (achados.length ? achados.length + " etiquetas batem com esse código — use o número do envio." :
-      "Nenhuma etiqueta liberada para “" + esc(codigo) + "”. Confira se a NF já foi faturada e enviada ao ML, ou clique em Atualizar lista.") + "</div>";
+      "Nenhuma etiqueta liberada para “" + esc(codigo) + "”. Confira se a NF já foi faturada e enviada ao ML, ou clique em ↻ para reler no ML.") + "</div>";
   }
   desenharExpedicao();
 }
@@ -361,6 +372,30 @@ function desenharExpedicao() {
     '</td><td><button type="button" data-exp="' + esc(e.shipment_id) + '">' + (e.substatus === "printed" ? "Reimprimir" : "Imprimir") + "</button></td></tr>").join("") ||
     '<tr><td colspan="8" class="mut">Nenhuma etiqueta liberada agora.</td></tr>';
   atualizarSelecao();
+}
+
+/**
+ * Recarga silenciosa da Expedição: busca as listas de novo e redesenha só a tabela e os
+ * números — mantém o que foi bipado, a seleção e o que está digitado no campo.
+ */
+async function recarregarExpedicao() {
+  const soLista = FASES_SO_LISTA.includes(expedicao.fase);
+  const [d, outros] = await Promise.all([
+    api("/api/etiquetas"),
+    soLista ? api("/api/etiquetas?fase=" + expedicao.fase) : Promise.resolve({ etiquetas: [] }),
+  ]);
+  if (rota().mod !== "expedicao") return; // saiu da tela enquanto buscava
+  expedicao.lista = d.etiquetas;
+  expedicao.outros = outros.etiquetas;
+  const ids = new Set(d.etiquetas.map((e) => e.shipment_id));
+  expedicao.sel = new Set([...expedicao.sel].filter((id) => ids.has(id)));
+  if (expedicao.achado) expedicao.achado = d.etiquetas.find((e) => e.shipment_id === expedicao.achado.shipment_id) || expedicao.achado;
+  const prontas = d.etiquetas.filter((e) => e.substatus === "ready_to_print").length;
+  if ($("#n-prontas")) $("#n-prontas").textContent = String(prontas);
+  if ($("#n-impressas")) $("#n-impressas").textContent = String(d.etiquetas.length - prontas);
+  desenharExpedicao();
+  atualizarContagemExpedicao();
+  marcarAtualizado();
 }
 
 function desenharAgendados() {
@@ -666,8 +701,28 @@ window.addEventListener("hashchange", navegar);
 // Ao voltar da janela de impressão (ou de outra janela), o cursor volta para o bipe.
 window.addEventListener("focus", () => { if (rota().mod === "expedicao") setTimeout(focarBipe, 50); });
 window.addEventListener("afterprint", () => setTimeout(focarBipe, 50));
-// Números dos submenus da Expedição em dia, sem recarregar a tela.
-setInterval(atualizarContagemExpedicao, 60_000);
+// Atualização automática a cada minuto. Não mexe na tela enquanto alguém está usando:
+// gaveta ou alerta abertos, busca digitada, impressão em lote em andamento.
+let autoOcupado = false;
+setInterval(async () => {
+  if (!token || document.hidden || autoOcupado) return;
+  if (!$("#gaveta").hidden || !$("#cancelado").hidden) return;
+  const { mod } = rota();
+  autoOcupado = true;
+  try {
+    if (mod === "expedicao") {
+      if ($("#imprimir-sel") && /Conferindo/.test($("#imprimir-sel").textContent)) return;
+      await recarregarExpedicao();
+      focarBipe();
+    } else if (mod === "pedidos") {
+      const ativo = document.activeElement;
+      if (ativo && (ativo.id === "busca-ped" || ativo.id === "dias")) return;
+      await renderPedidos();
+    } else {
+      atualizarContagemExpedicao();
+    }
+  } catch { /* falha passageira: tenta no próximo minuto */ } finally { autoOcupado = false; }
+}, AUTO_MS);
 
 if (token) { $("#tk").value = ""; carregarModos(); atualizarContagemExpedicao(); }
 navegar();
