@@ -177,7 +177,10 @@ async function imprimirEtiquetas(ids) {
 // chave da NF (44 dígitos) ou número da NF.
 // Todo bipe passa antes pela checagem ao vivo no ML (/api/expedicao/checar): venda
 // cancelada abre o alerta "Pedido cancelado — não envie" e não imprime.
-const expedicao = { lista: [], achado: null, ultimoBipe: "" };
+// Seleção múltipla: checkbox por linha + "Imprimir selecionadas" (até 20, teto do PDF).
+// O campo esvazia depois de cada leitura; bipar o mesmo código de novo (ou Enter vazio) imprime.
+const expedicao = { lista: [], achado: null, ultimoBipe: "", sel: new Set() };
+const MAX_SEL = 20;
 
 function alertarCancelado(c) {
   $("#cancelado-detalhe").innerHTML = "Pedido ML <b>" + esc(c.pedido || c.codigo) + "</b>" +
@@ -190,6 +193,12 @@ function alertarCancelado(c) {
     const o = ac.createOscillator(); o.type = "square"; o.frequency.value = 440; o.connect(ac.destination);
     o.start(); o.stop(ac.currentTime + 0.6);
   } catch { /* sem áudio, segue só o visual */ }
+}
+
+/** Vários cancelados de uma vez (impressão em lote). */
+function alertarCancelados(lista) {
+  if (lista.length === 1) return alertarCancelado(lista[0]);
+  alertarCancelado({ pedido: lista.map((c) => c.pedido || c.codigo).join(", "), motivo: lista.length + " pedidos selecionados foram cancelados no Mercado Livre. Nada foi impresso." });
 }
 
 function fecharCancelado() {
@@ -225,11 +234,35 @@ async function renderExpedicao() {
   $("#conteudo").innerHTML =
     '<div class="bipe"><label for="bipe">Bipar etiqueta</label><input id="bipe" inputmode="numeric" autocomplete="off" placeholder="leia o código do pedido">' +
     '<button type="button" id="limpar-bipe">Limpar</button><button type="button" id="atualizar-exp">Atualizar lista</button>' +
-    '<span class="dica">Aceita nº do pedido do ML, nº do envio, chave ou número da NF. Enter localiza; Enter de novo imprime.</span></div>' +
+    '<span class="dica">Aceita nº do pedido do ML, nº do envio, chave ou número da NF. O 1º bipe localiza; bipar de novo (ou Enter) imprime.</span></div>' +
     '<div id="resultado-bipe"></div>' +
     '<div class="cards"><div class="card"><b>' + prontas + '</b><span>Para imprimir</span></div><div class="card"><b>' + (d.etiquetas.length - prontas) + '</b><span>Já impressas (reimpressão)</span></div></div>' +
-    '<div class="painel"><table><thead><tr><th>Pedido ML</th><th>NF</th><th>Envio</th><th>Venda</th><th class="n">Total</th><th>Situação</th><th></th></tr></thead><tbody id="tb-exp"></tbody></table></div>';
+    '<div class="acoes-sel"><button type="button" class="primario" id="imprimir-sel" disabled>Imprimir selecionadas</button><span class="dica" id="info-sel"></span></div>' +
+    '<div class="painel"><table><thead><tr><th class="sel"><input type="checkbox" id="sel-todas" aria-label="Selecionar todas as visíveis"></th><th>Pedido ML</th><th>NF</th><th>Envio</th><th>Venda</th><th class="n">Total</th><th>Situação</th><th></th></tr></thead><tbody id="tb-exp"></tbody></table></div>';
+  // Seleção que ficou de uma lista anterior só vale para envios ainda liberados.
+  const ids = new Set(d.etiquetas.map((e) => e.shipment_id));
+  expedicao.sel = new Set([...expedicao.sel].filter((id) => ids.has(id)));
   desenharExpedicao();
+  $("#tb-exp").addEventListener("change", (ev) => {
+    const cx = ev.target.closest("input[data-sel]");
+    if (!cx) return;
+    if (cx.checked) {
+      if (expedicao.sel.size >= MAX_SEL) { cx.checked = false; erro("Máximo de " + MAX_SEL + " etiquetas por impressão."); return; }
+      expedicao.sel.add(cx.dataset.sel);
+    } else expedicao.sel.delete(cx.dataset.sel);
+    atualizarSelecao();
+  });
+  $("#sel-todas").addEventListener("change", (ev) => {
+    const visiveis = $$("#tb-exp input[data-sel]").map((c) => c.dataset.sel);
+    if (ev.target.checked) {
+      for (const id of visiveis) {
+        if (expedicao.sel.size >= MAX_SEL) { erro("Selecionei as primeiras " + MAX_SEL + " (máximo por impressão)."); break; }
+        expedicao.sel.add(id);
+      }
+    } else visiveis.forEach((id) => expedicao.sel.delete(id));
+    desenharExpedicao();
+  });
+  $("#imprimir-sel").onclick = (ev) => imprimirSelecionadas(ev.target).catch(erro);
   const campo = $("#bipe");
   campo.focus();
   campo.addEventListener("keydown", async (ev) => {
@@ -245,7 +278,8 @@ async function renderExpedicao() {
       catch (e) { erro("Não consegui conferir o cancelamento no ML (" + e.message + "). Confira no painel do ML antes de enviar."); }
       if (!seguir) { campo.value = ""; return; }
       localizar(codigo);
-    } catch (e) { erro(e); }
+      campo.value = ""; // pronto para o próximo bipe
+    } catch (e) { erro(e); campo.value = ""; }
   });
   $("#limpar-bipe").onclick = () => { expedicao.achado = null; expedicao.ultimoBipe = ""; campo.value = ""; desenharExpedicao(); campo.focus(); };
   $("#atualizar-exp").onclick = async (e) => { e.target.disabled = true; await post("/api/etiquetas/atualizar"); navegar(); };
@@ -274,15 +308,62 @@ function localizar(codigo) {
 function desenharExpedicao() {
   const focoId = expedicao.achado && expedicao.achado.shipment_id;
   const linhas = focoId ? expedicao.lista.filter((e) => e.shipment_id === focoId) : expedicao.lista;
-  $("#tb-exp").innerHTML = linhas.map((e) => '<tr class="' + (e.shipment_id === focoId ? "foco" : "") + '"><td><b>' + esc(e.chave || "—") + "</b></td><td>" +
+  $("#tb-exp").innerHTML = linhas.map((e) => '<tr class="' + (e.shipment_id === focoId ? "foco" : "") + (expedicao.sel.has(e.shipment_id) ? " sel" : "") + '">' +
+    '<td class="sel"><input type="checkbox" data-sel="' + esc(e.shipment_id) + '"' + (expedicao.sel.has(e.shipment_id) ? " checked" : "") +
+    ' aria-label="Selecionar pedido ' + esc(e.chave || e.shipment_id) + '"></td><td><b>' + esc(e.chave || "—") + "</b></td><td>" +
     esc(nfDaChave(e.fiscal_key) || "—") + "</td><td>" + esc(e.shipment_id) + "</td><td>" + esc(dtIso(e.data_ml)) + '</td><td class="n">' + brl(e.total) + "</td><td>" +
     (e.substatus === "ready_to_print" ? '<span class="tag info">para imprimir</span>' : '<span class="tag ok">já impressa</span>') +
     '</td><td><button type="button" data-exp="' + esc(e.shipment_id) + '">' + (e.substatus === "printed" ? "Reimprimir" : "Imprimir") + "</button></td></tr>").join("") ||
-    '<tr><td colspan="7" class="mut">Nenhuma etiqueta liberada agora.</td></tr>';
+    '<tr><td colspan="8" class="mut">Nenhuma etiqueta liberada agora.</td></tr>';
+  atualizarSelecao();
 }
 
-async function imprimirExpedicao(e) {
-  const r = await fetch("/api/etiquetas/baixar?formato=pdf&ids=" + encodeURIComponent(e.shipment_id), { headers: { Authorization: "Bearer " + token } });
+function atualizarSelecao() {
+  const n = expedicao.sel.size;
+  const bt = $("#imprimir-sel");
+  if (!bt) return;
+  bt.disabled = n === 0;
+  bt.textContent = n ? "Imprimir selecionadas (" + n + ")" : "Imprimir selecionadas";
+  $("#info-sel").textContent = n ? "" : "Marque as etiquetas na lista para imprimir várias de uma vez (até " + MAX_SEL + ").";
+  const visiveis = $$("#tb-exp input[data-sel]");
+  visiveis.forEach((c) => c.closest("tr").classList.toggle("sel", c.checked));
+  const todas = $("#sel-todas");
+  if (todas) todas.checked = visiveis.length > 0 && visiveis.every((c) => c.checked);
+}
+
+/** Lote: confere o cancelamento de cada selecionada no ML; se alguma caiu, não imprime nada. */
+async function imprimirSelecionadas(bt) {
+  const escolhidas = expedicao.lista.filter((e) => expedicao.sel.has(e.shipment_id));
+  if (!escolhidas.length) return;
+  limparErro();
+  bt.disabled = true;
+  try {
+    const cancelados = [];
+    for (let i = 0; i < escolhidas.length; i++) {
+      bt.textContent = "Conferindo " + (i + 1) + " de " + escolhidas.length + "…";
+      const c = await api("/api/expedicao/checar?codigo=" + encodeURIComponent(escolhidas[i].shipment_id));
+      if (c.cancelado) cancelados.push(c);
+    }
+    if (cancelados.length) {
+      const fora = new Set(cancelados.map((c) => c.shipment_id));
+      escolhidas.forEach((e) => { if (fora.has(e.shipment_id)) expedicao.sel.delete(e.shipment_id); });
+      desenharExpedicao();
+      $("#resultado-bipe").innerHTML = '<div class="nao-achado">' + cancelados.length + " pedido(s) cancelado(s) desmarcado(s). Confira a seleção e imprima de novo.</div>";
+      return alertarCancelados(cancelados);
+    }
+    await imprimirPdf(escolhidas.map((e) => e.shipment_id));
+    escolhidas.forEach((e) => { e.substatus = "printed"; e.impresso_em = Date.now(); });
+    expedicao.sel.clear();
+    $("#resultado-bipe").innerHTML = '<div class="achado"><span class="ok">' + escolhidas.length + " etiqueta(s) enviada(s) para impressão.</span></div>";
+    desenharExpedicao();
+  } finally {
+    atualizarSelecao();
+  }
+}
+
+/** Baixa o PDF 10x15 dos envios e manda para a impressora (iframe oculto). */
+async function imprimirPdf(ids) {
+  const r = await fetch("/api/etiquetas/baixar?formato=pdf&ids=" + ids.map(encodeURIComponent).join(","), { headers: { Authorization: "Bearer " + token } });
   if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.erro || "Falha HTTP " + r.status); }
   const url = URL.createObjectURL(await r.blob());
   // Imprime direto num iframe oculto; se o navegador bloquear, abre o PDF numa aba.
@@ -294,6 +375,10 @@ async function imprimirExpedicao(e) {
     setTimeout(() => { quadro.remove(); URL.revokeObjectURL(url); }, 120000);
   };
   document.body.appendChild(quadro);
+}
+
+async function imprimirExpedicao(e) {
+  await imprimirPdf([e.shipment_id]);
   e.substatus = "printed"; e.impresso_em = Date.now();
   expedicao.achado = null; expedicao.ultimoBipe = "";
   const campo = $("#bipe");
