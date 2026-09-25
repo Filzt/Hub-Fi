@@ -97,6 +97,7 @@ async function conferirPub(sku) {
         (f.imagem ? '<img src="' + esc(f.imagem) + '" alt="" loading="lazy">' : '<span class="sem-foto">sem foto</span>') +
         '<span class="ficha-txt"><b>' + esc(f.nome) + '</b><span class="mut">' + esc(f.pdp) + " · " + esc(f.grau || "?") + " · " + esc(f.cor || "?") + " · " + esc(f.capacidade || "?") + "</span>" +
         '<span>' + (f.concorrentes.total ? f.concorrentes.total + " anúncio(s) na ficha, menor preço " + brl(f.concorrentes.menor) + (f.concorrentes.nossos ? " (" + f.concorrentes.nossos + " nosso)" : "") : "ficha sem concorrentes") + "</span>" +
+        (f.avisos || []).map((w) => '<span class="tag warn">' + esc(w) + "</span>").join("") +
         (f.ocupada.length ? '<span class="tag warn">já temos: ' + f.ocupada.map((o) => esc(NOME_TIPO[o.tipo] || o.tipo) + " " + esc(o.mlb)).join(", ") + "</span>" : "") +
         (!ok ? '<span class="tag err">' + (f.status !== "active" ? "ficha " + esc(f.status) : "categoria " + esc(f.dominio || "?") + " ainda não publicada") + "</span>" : "") +
         '<a href="' + esc(f.link) + '" target="_blank" rel="noopener">abrir no ML ↗</a></span></label>';

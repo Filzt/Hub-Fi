@@ -200,6 +200,10 @@ export async function conferir(env: Env, sku: string) {
   const reguas = await reguasVigentes(env);
   const ocup = await store.fichasOcupadas();
   const fichas = [];
+  // O casamento aceita quando só a ficha declara a rede (ausência não é contradição) e não
+  // olha RAM. Aqui isso vira aviso para quem confere, em vez de passar calado.
+  const tituloErp = ` ${String(x.produto).toLowerCase()} `;
+  const redeErp = /\s[45]g\s/.test(tituloErp);
   for (const pdp of pdps) {
     const [p, conc] = await Promise.all([produto(env, pdp), concorrentes(env, pdp)]);
     fichas.push({
@@ -213,6 +217,10 @@ export async function conferir(env: Env, sku: string) {
       dominio: p?.domain_id ?? null,
       concorrentes: conc,
       ocupada: ocup.filter((o) => o.catalog_product_id === pdp).map((o) => ({ tipo: o.listing_type, mlb: o.item_id, sku: o.sku })),
+      avisos: [
+        ...(!redeErp && p?.name && /\b[45]g\b/i.test(p.name) ? [`o Sankhya não diz se é 4G ou 5G e a ficha é ${(p.name.match(/\b([45]g)\b/i) ?? [])[1]?.toUpperCase()} — confira o aparelho`] : []),
+        ...(p?.name && /\d+\s*gb\s*ram/i.test(p.name) ? [`ficha com ${(p.name.match(/(\d+)\s*gb\s*ram/i) ?? [])[1]} GB de RAM — confira se é a do aparelho`] : []),
+      ],
     });
   }
   return {
