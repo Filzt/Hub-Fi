@@ -41,6 +41,10 @@ Isso é automático (`public/tabela.js`): basta montar `<table>` com `<thead>` d
 
 ## Publicação
 
+- Todo commit vai para os dois repositórios (Filipe, 25/09/2026): `git push origin main` (gruposkytech/skyhub) e `git push meu main` (Filzt/Hub-Fi).
+  - O push no `meu` depende de o Filipe ter liberado `Bash(git push meu main)` nas permissões do Claude Code.
+  - Se estiver barrado, avise o Filipe para rodar ele mesmo. Nunca contorne.
+
 - Deploy manual com `npx wrangler deploy`, usando `CLOUDFLARE_API_TOKEN` e `CLOUDFLARE_ACCOUNT_ID` do cofre (keyring `fi-ecommerce`).
 - Rode `npm test` e `npx tsc -p .` antes.
 - O Worker tem teto de 50 chamadas externas por requisição.
