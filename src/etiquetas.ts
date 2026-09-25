@@ -66,6 +66,9 @@ export async function atualizarEnviosPendentes(env: Env, limite = 20): Promise<n
 const MAX_PDF = 20;
 
 /** Baixa as etiquetas: PDF recortado em 10x15 (até 20) ou ZPL (até 50). */
+/** Situações da NF (tabela nfs) em que o XML já está no ML. */
+export const NF_NO_ML = new Set(["enviado", "ja_no_ml"]);
+
 export async function baixarEtiquetas(env: Env, ids: string[], formato: "pdf" | "zpl2"): Promise<Response> {
   const limpos = [...new Set(ids.map((x) => x.trim()).filter((x) => /^\d{6,20}$/.test(x)))];
   if (!limpos.length) throw new ErroDefinitivo("nenhum envio válido");
@@ -99,6 +102,16 @@ export async function baixarEtiquetas(env: Env, ids: string[], formato: "pdf" | 
   if (cancelados.length) {
     await store.log("aviso", null, `impressão recusada: venda cancelada — ${cancelados.join(", ")}`);
     throw new ErroDefinitivo(`venda cancelada, não imprima: ${cancelados.join(", ")}`);
+  }
+  // Flex: o ML libera a etiqueta sem esperar a NF (no xd_drop_off ela fica em invoice_pending).
+  // Sem esta trava a caixa sairia sem nota. Só imprime com a NF já anexada no ML (nf.ts).
+  const flexSemNf = limpos.filter((id) => {
+    const s = conhecidos.get(id);
+    return s?.logistica === "self_service" && !(s.fiscal_key && NF_NO_ML.has(String(s.nf_status)));
+  });
+  if (flexSemNf.length) {
+    await store.log("aviso", null, `impressão recusada: Flex sem NF no ML — ${flexSemNf.join(", ")}`);
+    throw new ErroDefinitivo(`Flex sem NF: fature e envie a NF ao ML antes de imprimir (${flexSemNf.join(", ")})`);
   }
   let corpo: Uint8Array;
   let tipo: string;

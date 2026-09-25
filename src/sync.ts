@@ -29,6 +29,15 @@ export interface AnuncioSync {
   preco_ml: number | null;
   listing_type: string;
   catalog_product_id?: string | null; // ficha de catálogo (trava de duplicata na publicação)
+  flex?: 0 | 1 | null; // Envio Flex (shipping.tags self_service_in/out); null = não informado
+}
+
+/** Tag de envio do item → 1 (com Flex), 0 (sem Flex) ou null (item sem a informação). */
+export function flexDasTags(tags: string[] | undefined | null): 0 | 1 | null {
+  if (!tags) return null;
+  if (tags.includes("self_service_in")) return 1;
+  if (tags.includes("self_service_out")) return 0;
+  return null;
 }
 
 export interface ErpSku {

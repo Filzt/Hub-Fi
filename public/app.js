@@ -40,11 +40,12 @@ async function baixar(caminho) {
 }
 
 // Módulos do canal Mercado Livre (item "Mercado Livre" do menu). A Nuvemshop ganha o seu grupo.
-const DO_ML = ["publicacao", "precificacao"];
+const DO_ML = ["publicacao", "precificacao", "flex"];
 const grupoDe = (mod) => (DO_ML.includes(mod) ? "ml" : mod);
 const permitido = (mod) => {
   if (!eu) return false;
   if (mod === "ml") return eu.admin || DO_ML.some((m) => eu.modulos.includes(m));
+  if (mod === "flex") mod = "publicacao"; // Envio Flex é permissão de anúncios do ML
   return eu.admin || (mod !== "admin" && eu.modulos.includes(mod));
 };
 const iniciais = (nome) => String(nome || "?").trim().split(/[\s@.]+/).filter(Boolean).slice(0, 2).map((p) => p[0].toUpperCase()).join("");
@@ -97,10 +98,11 @@ const MODULOS = {
   produtos: { titulo: "Produtos", render: renderProdutos, desc: "Cada SKU do Sankhya e em quais canais de venda ele está." },
   publicacao: { titulo: "Publicar anúncios", render: renderPublicacao, canal: "Mercado Livre" },
   precificacao: { titulo: "Precificação", render: renderPrecificacao, canal: "Mercado Livre", desc: "Régua que transforma o preço de loja do Sankhya no preço do anúncio." },
+  flex: { titulo: "Envio Flex", render: renderFlex, canal: "Mercado Livre", desc: "Quais anúncios oferecem entrega no mesmo dia pelo Flex. Liga e desliga por anúncio, sempre por clique." },
   integracao: { titulo: "Integrações", render: renderIntegracao },
   admin: { titulo: "Acessos", render: renderAdmin },
 };
-const PADRAO_SUB = { integracao: "visao", expedicao: "imprimir", admin: "usuarios", publicacao: "fila", precificacao: "ml" };
+const PADRAO_SUB = { integracao: "visao", expedicao: "imprimir", admin: "usuarios", publicacao: "fila", precificacao: "ml", flex: "lista" };
 const SUBTITULOS = {
   integracao: { visao: "Visão geral", nfs: "NF-e → ML", logs: "Logs", eventos: "Eventos" },
   expedicao: { agendados: "Agendados", imprimir: "Para imprimir", impressos: "Impressos", despachados: "Despachados" },
@@ -283,6 +285,10 @@ const expedicao = { lista: [], achado: null, ultimoBipe: "", sel: new Set(), fas
 const FASES_SO_LISTA = ["agendados", "despachados"];
 /** Data de liberação do ML ("2026-09-28T00:00:00.000Z" é o DIA 28, não 21h do dia 27). */
 const diaLiberacao = (iso) => (iso ? new Date(iso).toLocaleDateString("pt-BR", { timeZone: "UTC", weekday: "short", day: "2-digit", month: "2-digit" }) : "data não informada");
+// Flex: o ML libera a etiqueta sem esperar a NF. Só imprime com a NF já anexada no ML
+// (o servidor recusa também — etiquetas.ts).
+const ehFlex = (e) => e.logistica === "self_service";
+const flexSemNf = (e) => ehFlex(e) && !(e.fiscal_key && ["enviado", "ja_no_ml"].includes(e.nf_status));
 const FASE_EXP = {
   imprimir: (e) => e.substatus === "ready_to_print",
   impressos: (e) => e.substatus === "printed",
@@ -390,7 +396,7 @@ async function renderExpedicao(sub) {
     atualizarSelecao();
   });
   if ($("#sel-todas")) $("#sel-todas").addEventListener("change", (ev) => {
-    const visiveis = $$("#tb-exp input[data-sel]").map((c) => c.dataset.sel);
+    const visiveis = $$("#tb-exp input[data-sel]:not(:disabled)").map((c) => c.dataset.sel);
     if (ev.target.checked) {
       for (const id of visiveis) {
         if (expedicao.sel.size >= MAX_SEL) { erro("Selecionei as primeiras " + MAX_SEL + " (máximo por impressão)."); break; }
@@ -431,7 +437,10 @@ function localizar(codigo) {
   const achados = expedicao.lista.filter((e) => casaBipe(e, codigo));
   expedicao.achado = achados.length === 1 ? achados[0] : null;
   const alvo = $("#resultado-bipe");
-  if (achados.length === 1) {
+  if (achados.length === 1 && flexSemNf(achados[0])) {
+    expedicao.achado = null;
+    alvo.innerHTML = '<div class="nao-achado">Pedido ' + esc(achados[0].chave) + " é <b>Flex</b> e ainda está sem NF no Mercado Livre. Fature e envie a NF antes de imprimir (entrega hoje).</div>";
+  } else if (achados.length === 1) {
     const e = achados[0];
     alvo.innerHTML = '<div class="achado"><div><div class="mut">Pedido ML</div><div class="grande">' + esc(e.chave) + "</div></div>" +
       '<div><div class="mut">NF</div><div class="grande">' + esc(nfDaChave(e.fiscal_key) || "—") + "</div></div>" +
@@ -452,11 +461,12 @@ function desenharExpedicao() {
   // O bipe acha em qualquer fase imprimível; sem bipe, a tabela mostra só a aba atual.
   const linhas = focoId ? expedicao.lista.filter((e) => e.shipment_id === focoId) : expedicao.lista.filter(FASE_EXP[expedicao.fase]);
   $("#tb-exp").innerHTML = linhas.map((e) => '<tr class="' + (e.shipment_id === focoId ? "foco" : "") + (expedicao.sel.has(e.shipment_id) ? " sel" : "") + '">' +
-    '<td class="sel"><input type="checkbox" data-sel="' + esc(e.shipment_id) + '"' + (expedicao.sel.has(e.shipment_id) ? " checked" : "") +
-    ' aria-label="Selecionar pedido ' + esc(e.chave || e.shipment_id) + '"></td><td>' + seloCanal(e.canal) + " <b>" + esc(e.chave || "—") + "</b></td><td>" +
+    '<td class="sel"><input type="checkbox" data-sel="' + esc(e.shipment_id) + '"' + (expedicao.sel.has(e.shipment_id) ? " checked" : "") + (flexSemNf(e) ? " disabled" : "") +
+    ' aria-label="Selecionar pedido ' + esc(e.chave || e.shipment_id) + '"></td><td>' + seloCanal(e.canal) + " <b>" + esc(e.chave || "—") + "</b>" +
+    (ehFlex(e) ? ' <span class="tag warn" title="Envio Flex: entrega no mesmo dia">Flex · hoje</span>' : "") + "</td><td>" +
     esc(nfDaChave(e.fiscal_key) || "—") + "</td><td>" + esc(e.shipment_id) + "</td><td>" + esc(dtIso(e.data_ml)) + '</td><td class="n">' + brl(e.total) + "</td><td>" +
-    (e.substatus === "ready_to_print" ? '<span class="tag info">para imprimir</span>' : '<span class="tag ok">já impressa</span>') +
-    '</td><td><button type="button" data-exp="' + esc(e.shipment_id) + '">' + (e.substatus === "printed" ? "Reimprimir" : "Imprimir") + "</button></td></tr>").join("") ||
+    (flexSemNf(e) ? '<span class="tag err">aguardando NF</span>' : e.substatus === "ready_to_print" ? '<span class="tag info">para imprimir</span>' : '<span class="tag ok">já impressa</span>') +
+    '</td><td><button type="button" data-exp="' + esc(e.shipment_id) + '"' + (flexSemNf(e) ? ' disabled title="Flex sem NF no ML"' : "") + ">" + (e.substatus === "printed" ? "Reimprimir" : "Imprimir") + "</button></td></tr>").join("") ||
     '<tr><td colspan="8" class="mut">Nenhuma etiqueta liberada agora.</td></tr>';
   atualizarSelecao();
 }
@@ -656,11 +666,12 @@ function abrirProduto(sku) {
       corpo = '<p class="mut">Sem anúncio no ' + esc(c.nome) + "." + (p.disp > 0 && permitido("publicacao") ? " Tem saldo, dá para publicar.</p>" +
         '<p><button type="button" class="primario" data-ir-publicar="' + esc(p.sku) + '">Abrir em Publicar anúncios</button></p>' : "</p>");
     } else {
-      corpo = '<div class="tabela"><table><thead><tr><th>Anúncio</th><th>Tipo</th><th>Situação</th><th class="n">Estoque</th><th class="n">Preço</th><th class="n">Preço alvo</th></tr></thead><tbody>' +
+      corpo = '<div class="tabela"><table><thead><tr><th>Anúncio</th><th>Tipo</th><th>Situação</th><th>Flex</th><th class="n">Estoque</th><th class="n">Preço</th><th class="n">Preço alvo</th></tr></thead><tbody>' +
         s.anuncios.map((a) => '<tr><td><a href="https://produto.mercadolivre.com.br/' + esc(a.item_id.replace(/^MLB/, "MLB-")) + '" target="_blank" rel="noopener">' + esc(a.item_id) + "</a></td>" +
-          "<td>" + esc(TIPOS[a.listing_type] || a.listing_type) + "</td><td>" + situacaoAnuncio(a) + '</td><td class="n' + (a.div_qtd ? " warn" : "") + '">' + esc(a.qtd_ml) +
+          "<td>" + esc(TIPOS[a.listing_type] || a.listing_type) + "</td><td>" + situacaoAnuncio(a) + "</td><td>" + (a.flex === 1 ? '<span class="tag ok">sim</span>' : a.flex === 0 ? "não" : "—") +
+          '</td><td class="n' + (a.div_qtd ? " warn" : "") + '">' + esc(a.qtd_ml) +
           '</td><td class="n' + (a.div_preco ? " warn" : "") + '">' + brl(a.preco_ml) + '</td><td class="n">' + brl(a.preco_alvo) + "</td></tr>" +
-          (a.ultima_acao ? '<tr><td colspan="6" class="mut">Última ação ' + esc(dt(a.acao_em)) + ": " + esc(a.ultima_acao) + "</td></tr>" : "")).join("") +
+          (a.ultima_acao ? '<tr><td colspan="7" class="mut">Última ação ' + esc(dt(a.acao_em)) + ": " + esc(a.ultima_acao) + "</td></tr>" : "")).join("") +
         "</tbody></table></div>";
     }
     return '<div class="bloco-canal"><div class="cab"><b>' + esc(c.nome) + "</b>" + (c.integrado ? seloSituacao(c, s) : '<span class="canal off">em breve</span>') + "</div>" + corpo + "</div>";

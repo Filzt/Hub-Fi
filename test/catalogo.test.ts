@@ -31,3 +31,14 @@ test("junta anúncios por SKU, inclui SKU com saldo sem anúncio e ignora encerr
   assert.equal(c2.canais.ml.situacao, "nao_anunciado");
   assert.equal(c2.disp, 2);
 });
+
+test("Flex do anúncio sai das tags de envio do item", async () => {
+  const { flexDasTags } = await import("../src/sync.ts");
+  assert.equal(flexDasTags(["self_service_out", "mandatory_free_shipping", "self_service_available"]), 0);
+  assert.equal(flexDasTags(["self_service_in"]), 1);
+  assert.equal(flexDasTags(["mandatory_free_shipping"]), null);
+  assert.equal(flexDasTags(undefined), null);
+  const { moduloDaRota } = await import("../src/auth.ts");
+  assert.equal(moduloDaRota("POST", "/api/flex"), "publicacao");
+  assert.equal(moduloDaRota("POST", "/api/flex/novos"), "publicacao");
+});

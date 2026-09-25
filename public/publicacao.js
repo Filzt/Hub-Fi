@@ -1,6 +1,7 @@
 // SkyHub — Publicar anúncios pelo SKU (módulo "publicacao").
 // Fila: SKU ativo no Sankhya, com saldo e sem anúncio, com a ficha do ML sugerida pelo
 // casamento. Nada vai ao ML sem clique: Conferir → escolher ficha e tipo → Publicar.
+// Aqui também mora a tela Envio Flex (anúncios do ML).
 // Carregado antes do app.js; usa $, esc, api, post, brl, dt, erro, avisar de lá.
 "use strict";
 
@@ -105,6 +106,7 @@ async function conferirPub(sku) {
     '<h3>Tipo de anúncio</h3><div class="tipos">' +
     Object.keys(NOME_TIPO).map((t) => '<label class="check"><input type="radio" name="tipo" value="' + t + '"' + (t === "gold_special" ? " checked" : "") + "> " +
       NOME_TIPO[t] + " — " + brl(d.precos[t]) + "</label>").join("") + "</div>" +
+    '<h3>Envio</h3><label class="check"><input type="checkbox" name="flex"' + (d.flexPadrao ? " checked" : "") + "> Oferecer Envio Flex (entrega no mesmo dia)</label>" +
     '<div class="acoes"><button type="submit" class="primario"' + (primeira ? "" : " disabled") + ">Publicar no Mercado Livre</button>" +
     '<span class="mut">Quantidade: ' + esc(x.disp) + " (depois o SkyHub sincroniza estoque e preço sozinho)</span></div>" +
     '<div id="resultado-pub"></div></form>';
@@ -113,12 +115,13 @@ async function conferirPub(sku) {
     e.preventDefault();
     const pdp = (e.target.querySelector("[name=pdp]:checked") || {}).value;
     const tipo = (e.target.querySelector("[name=tipo]:checked") || {}).value;
+    const flex = e.target.querySelector("[name=flex]").checked;
     if (!pdp) return erro("Escolha a ficha.");
-    if (!confirm("Publicar " + x.sku + " no Mercado Livre?\n\nFicha " + pdp + "\n" + NOME_TIPO[tipo] + " por " + brl(d.precos[tipo]) + ", " + x.disp + " un.\n\nO anúncio vai ao ar na hora.")) return;
+    if (!confirm("Publicar " + x.sku + " no Mercado Livre?\n\nFicha " + pdp + "\n" + NOME_TIPO[tipo] + " por " + brl(d.precos[tipo]) + ", " + x.disp + " un.\n" + (flex ? "Com" : "Sem") + " Envio Flex.\n\nO anúncio vai ao ar na hora.")) return;
     const b = e.target.querySelector("button[type=submit]");
     b.disabled = true; b.textContent = "Publicando…";
     try {
-      const r = await post("/api/publicacao/publicar", { sku: x.sku, pdp, tipo });
+      const r = await post("/api/publicacao/publicar", { sku: x.sku, pdp, tipo, flex });
       $("#resultado-pub").innerHTML = '<div class="achado"><span class="ok">Publicado: <a href="' + esc(r.link) + '" target="_blank" rel="noopener">' + esc(r.mlb) +
         "</a> — " + esc(r.tipo) + " " + brl(r.preco) + ", " + esc(r.qtd) + " un. Flex " + esc(r.flex) + ". A auditoria confere em 5 minutos.</span></div>";
       b.textContent = "Publicado ✓";
@@ -150,4 +153,123 @@ document.addEventListener("click", async (ev) => {
     if (b.dataset.pubFiltro) { pub.filtro = b.dataset.pubFiltro; return desenharFilaPub(); }
     if (b.dataset.conferir) return await conferirPub(b.dataset.conferir);
   } catch (e) { erro(e); }
+});
+
+// ------------------------------------------------------------------ Envio Flex
+// Liga e desliga o Flex por anúncio (a doc do ML pede que seja decisão do vendedor, por
+// clique — nada disso roda sozinho). Zonas, corte e capacidade só aparecem: mudam no painel do ML.
+const flexTela = { dados: null, filtro: "todos", busca: "", sel: new Set() };
+const DIAS_FLEX = { week: "Segunda a sexta", saturday: "Sábado", sunday: "Domingo" };
+const FILTROS_FLEX = [
+  ["todos", "Anúncios ativos e pausados", () => true],
+  ["com", "Com Flex", (a) => a.flex === 1],
+  ["sem", "Sem Flex", (a) => a.flex === 0],
+  ["nao_lido", "Ainda não lidos", (a) => a.flex == null],
+];
+
+async function renderFlex() {
+  flexTela.dados = await api("/api/flex");
+  const ids = new Set(flexTela.dados.anuncios.map((a) => a.item_id));
+  flexTela.sel = new Set([...flexTela.sel].filter((id) => ids.has(id)));
+  desenharFlex();
+}
+
+function resumoConfigFlex(c) {
+  if (c.erro && !c.assinatura) return '<p class="nao-achado">Não consegui ler a assinatura Flex: ' + esc(c.erro) + "</p>";
+  const faixa = (d) => {
+    const f = (c.faixas[d] || [])[0];
+    return f ? "corte " + f.cutoff + "h · entrega " + f.from + "h–" + f.to + "h · até " + f.capacity + " pedidos" : '<span class="mut">não entrega</span>';
+  };
+  return '<dl class="dados"><dt>Assinatura</dt><dd>' + (c.assinatura === "in" ? '<span class="tag ok">ativa</span>' : '<span class="tag warn">' + esc(c.assinatura || "—") + "</span>") + "</dd>" +
+    "<dt>Saída</dt><dd>" + esc(c.origem || "—") + "</dd>" +
+    "<dt>Prazo</dt><dd>" + (c.janela === "same_day" ? "entrega no mesmo dia" : c.janela === "next_day" ? "entrega no dia seguinte" : esc(c.janela || "—")) + "</dd>" +
+    Object.keys(DIAS_FLEX).map((d) => "<dt>" + DIAS_FLEX[d] + "</dt><dd>" + faixa(d) + "</dd>").join("") +
+    "<dt>Zonas</dt><dd>" + (c.zonas.length ? c.zonas.map((z) => esc(z.replace(/^BR-SP-/, "SP "))).join(", ") : "—") + "</dd></dl>" +
+    '<p class="dica">Zonas, horário de corte e capacidade se mudam no painel do Mercado Livre (Vendas → Envios Flex).</p>';
+}
+
+function desenharFlex() {
+  const d = flexTela.dados;
+  const termo = flexTela.busca.trim().toUpperCase();
+  const f = (FILTROS_FLEX.find(([k]) => k === flexTela.filtro) || FILTROS_FLEX[0])[2];
+  const lista = d.anuncios.filter(f).filter((a) => !termo || a.item_id.includes(termo) || String(a.sku).includes(termo) || String(a.produto || "").toUpperCase().includes(termo));
+  const n = flexTela.sel.size;
+  $("#conteudo").innerHTML =
+    '<div class="nao-achado aviso-flex">Flex é entrega no mesmo dia feita por vocês. Cada anúncio ligado pode gerar pedido com prazo de horas; atraso derruba a reputação da conta.</div>' +
+    '<div class="painel"><h3>Configuração Flex da conta</h3><div class="corpo-painel">' + resumoConfigFlex(d.config) +
+    '<label class="check forte"><input type="checkbox" id="flex-novos"' + (d.novosComFlex ? " checked" : "") + "> Novos anúncios publicados pelo SkyHub já saem com Flex</label></div></div>" +
+    '<div class="cards">' + FILTROS_FLEX.map(([k, t, fn]) => {
+      const q = d.anuncios.filter(fn).length;
+      if (k === "nao_lido" && !q) return "";
+      return '<button type="button" class="card clicavel' + (flexTela.filtro === k ? " ativo" : "") + '" data-filtro-flex="' + k + '" aria-pressed="' + (flexTela.filtro === k) + '"><b>' + q + "</b><span>" + esc(t) + "</span></button>";
+    }).join("") + "</div>" +
+    '<div class="barra"><input id="busca-flex" type="search" placeholder="MLB, SKU ou produto" value="' + esc(flexTela.busca) + '" aria-label="Buscar anúncio">' +
+    '<span class="espaco"></span><span class="dica" id="info-flex">' + (n ? n + " selecionado(s)" : "Marque os anúncios na lista") + "</span>" +
+    '<button type="button" id="flex-desligar"' + (n ? "" : " disabled") + ">Desativar Flex</button>" +
+    '<button type="button" class="primario" id="flex-ligar"' + (n ? "" : " disabled") + ">Ativar Flex" + (n ? " (" + n + ")" : "") + "</button></div>" +
+    '<div id="resultado-flex"></div>' +
+    '<div class="painel"><table><thead><tr><th class="sel"><input type="checkbox" id="flex-todos" aria-label="Selecionar todos os visíveis"></th><th>Anúncio</th><th>SKU</th><th>Produto</th><th>Situação</th><th class="n">Estoque</th><th>Flex</th></tr></thead><tbody id="tb-flex">' +
+    (lista.map((a) => '<tr class="' + (flexTela.sel.has(a.item_id) ? "sel" : "") + '"><td class="sel"><input type="checkbox" data-sel-flex="' + esc(a.item_id) + '"' + (flexTela.sel.has(a.item_id) ? " checked" : "") + ' aria-label="Selecionar ' + esc(a.item_id) + '"></td>' +
+      '<td><a href="https://produto.mercadolivre.com.br/' + esc(a.item_id.replace(/^MLB/, "MLB-")) + '" target="_blank" rel="noopener">' + esc(a.item_id) + "</a></td><td><b>" + esc(a.sku || "—") + '</b></td><td class="prod-nome">' + esc(a.produto || "—") + "</td>" +
+      "<td>" + situacaoAnuncio(a) + '</td><td class="n">' + esc(a.qtd_ml) + "</td><td>" +
+      (a.flex === 1 ? '<span class="tag ok">com Flex</span>' : a.flex === 0 ? '<span class="tag">sem Flex</span>' : '<span class="mut">lendo…</span>') + "</td></tr>").join("") ||
+      '<tr><td colspan="7" class="vazio">Nenhum anúncio neste filtro.</td></tr>') + "</tbody></table></div>";
+
+  const visiveis = () => $$("#tb-flex input[data-sel-flex]");
+  $("#flex-todos").checked = visiveis().length > 0 && visiveis().every((c) => c.checked);
+  $("#tb-flex").addEventListener("change", (ev) => {
+    const c = ev.target.closest("input[data-sel-flex]");
+    if (!c) return;
+    c.checked ? flexTela.sel.add(c.dataset.selFlex) : flexTela.sel.delete(c.dataset.selFlex);
+    desenharFlex();
+  });
+  $("#flex-todos").onchange = (ev) => { visiveis().forEach((c) => (ev.target.checked ? flexTela.sel.add(c.dataset.selFlex) : flexTela.sel.delete(c.dataset.selFlex))); desenharFlex(); };
+  $("#busca-flex").oninput = (e) => {
+    flexTela.busca = e.target.value;
+    clearTimeout(desenharFlex.t);
+    desenharFlex.t = setTimeout(() => { desenharFlex(); const x = $("#busca-flex"); x.focus(); x.setSelectionRange(x.value.length, x.value.length); }, 250);
+  };
+  $("#flex-ligar").onclick = () => mudarFlex(true).catch(erro);
+  $("#flex-desligar").onclick = () => mudarFlex(false).catch(erro);
+  $("#flex-novos").onchange = async (e) => {
+    try { await post("/api/flex/novos", { ativo: e.target.checked }); avisar(e.target.checked ? "Novos anúncios vão sair com Flex." : "Novos anúncios vão sair sem Flex."); d.novosComFlex = e.target.checked; }
+    catch (x) { e.target.checked = !e.target.checked; erro(x); }
+  };
+}
+
+/** Envia em lotes de 50 (teto por chamada do SkyHub); o servidor confere cada anúncio no ML. */
+async function mudarFlex(ativar) {
+  const ids = [...flexTela.sel];
+  if (!ids.length) return;
+  const c = flexTela.dados.config;
+  const faixa = (c.faixas.week || [])[0];
+  const msg = ativar
+    ? "Ativar Flex em " + ids.length + " anúncio(s)?\n\nPedido Flex é entrega no mesmo dia" + (faixa ? " (corte " + faixa.cutoff + "h, até " + faixa.capacity + " pedidos por dia)" : "") + ", feita por vocês."
+    : "Desativar Flex em " + ids.length + " anúncio(s)? Eles seguem vendendo pela coleta normal.";
+  if (!confirm(msg)) return;
+  limparErro();
+  $$("#flex-ligar, #flex-desligar").forEach((b) => { b.disabled = true; });
+  const resultados = [];
+  try {
+    for (let i = 0; i < ids.length; i += 50) {
+      $("#info-flex").textContent = (ativar ? "Ativando" : "Desativando") + "… " + Math.min(i + 50, ids.length) + " de " + ids.length;
+      const r = await post("/api/flex", { ids: ids.slice(i, i + 50), ativar });
+      resultados.push(...r.resultados);
+    }
+  } finally {
+    const porId = new Map(resultados.map((r) => [r.item_id, r]));
+    flexTela.dados.anuncios.forEach((a) => { const r = porId.get(a.item_id); if (r && r.flex != null) a.flex = r.flex; });
+    resultados.filter((r) => r.ok).forEach((r) => flexTela.sel.delete(r.item_id));
+    desenharFlex();
+    const falhas = resultados.filter((r) => !r.ok);
+    if (resultados.length) avisar((ativar ? "Flex ativado" : "Flex desativado") + " em " + (resultados.length - falhas.length) + " de " + resultados.length + ".");
+    if (falhas.length) $("#resultado-flex").innerHTML = '<div class="nao-achado">Não mudaram (seguem selecionados): ' + falhas.map((f) => esc(f.item_id) + " — " + esc(f.detalhe)).join("<br>") + "</div>";
+  }
+}
+
+document.addEventListener("click", (ev) => {
+  const b = ev.target.closest("[data-filtro-flex]");
+  if (!b) return;
+  flexTela.filtro = b.dataset.filtroFlex;
+  desenharFlex();
 });

@@ -224,14 +224,14 @@ export async function conferir(env: Env, sku: string) {
     });
   }
   return {
-    sku: x, grau_ml: grauMl(x.qualidade), motivo: c?.motivo ?? null, fichas,
+    sku: x, grau_ml: grauMl(x.qualidade), motivo: c?.motivo ?? null, fichas, flexPadrao: (await store.meta("flex_novos")) === "1",
     precos: Object.fromEntries(Object.keys(TIPOS).map((t) => [t, precoAlvo(x.preco_loja, t, reguas)])),
   };
 }
 
 // ------------------------------------------------------------------ publicar
 
-export async function publicar(env: Env, quem: Quem, pedido: { sku?: unknown; pdp?: unknown; tipo?: unknown }) {
+export async function publicar(env: Env, quem: Quem, pedido: { sku?: unknown; pdp?: unknown; tipo?: unknown; flex?: unknown }) {
   const sku = String(pedido.sku ?? "").trim().toUpperCase();
   const pdp = String(pedido.pdp ?? "").trim().toUpperCase();
   const tipo = String(pedido.tipo ?? "") as Tipo;
@@ -305,16 +305,26 @@ export async function publicar(env: Env, quem: Quem, pedido: { sku?: unknown; pd
       throw new ErroDefinitivo(`o ML recusou: ${detalhe}`);
     }
     const mlb = String(r.corpo?.id ?? "");
-    // Flex nasce ligado (assinatura da conta); o publicar.py desligava anúncio a anúncio.
-    let flex = "desligado";
+    // Flex: a pessoa escolhe no formulário (o padrão vem da tela Envio Flex). O anúncio nasce
+    // com Flex pela assinatura da conta; sem Flex, desliga como o publicar.py fazia. Confere lendo de volta.
+    const querFlex = pedido.flex === true;
+    let flex = querFlex ? "ligado" : "desligado";
+    let flexLido: 0 | 1 | null = null;
     try {
-      const f = await meliEnviar(env, "DELETE", `/flex/sites/MLB/items/${mlb}/v2`, null);
-      if (f.status !== 204 && f.status !== 200) flex = `não desligou (HTTP ${f.status})`;
-    } catch (e) { flex = `não desligou (${(e as Error).message.slice(0, 80)})`; }
+      const caminho = `/flex/sites/MLB/items/${mlb}/v2`;
+      if (!querFlex) await meliEnviar(env, "DELETE", caminho, null);
+      else {
+        const f = await meliEnviar(env, "POST", caminho, null);
+        if (f.status === 403) flex = "não aceito pelo ML (item down)";
+      }
+      const g = await meliGet<{ has_flex?: boolean }>(env, caminho);
+      flexLido = g.has_flex === true ? 1 : g.has_flex === false ? 0 : null;
+      if (flexLido !== (querFlex ? 1 : 0)) flex = `pedido ${querFlex ? "ligado" : "desligado"}, ML mostra ${flexLido === 1 ? "ligado" : flexLido === 0 ? "desligado" : "?"}`;
+    } catch (e) { flex = `não confirmado (${(e as Error).message.slice(0, 80)})`; }
 
     await store.salvarAnuncios([{
       item_id: mlb, sku, status: String(r.corpo?.status ?? "active"), sub_status: (r.corpo?.sub_status ?? []).join(","),
-      qtd_ml: x.disp, preco_ml: preco, listing_type: tipo, catalog_product_id: String(r.corpo?.catalog_product_id ?? pdp),
+      qtd_ml: x.disp, preco_ml: preco, listing_type: tipo, catalog_product_id: String(r.corpo?.catalog_product_id ?? pdp), flex: flexLido,
     }]);
     const id = await store.registrarPublicacao({ sku, pdp, tipo, preco, qtd: x.disp, status: "criado", mlb, detalhe: `Flex ${flex}`, quem: quem.email });
     await store.log("info", null, `anúncio publicado: ${mlb} — ${sku} na ficha ${pdp} (${TIPOS[tipo]}), R$ ${preco}, ${x.disp} un., por ${quem.email}; Flex ${flex}`);

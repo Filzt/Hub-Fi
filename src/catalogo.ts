@@ -24,6 +24,7 @@ export interface AnuncioMl {
   div_preco: boolean;
   ultima_acao: string | null;
   acao_em: number | null;
+  flex: 0 | 1 | null;
 }
 
 export interface ProdutoCanais {
@@ -84,7 +85,7 @@ export function montarCatalogo(
       // Mesma regra do planejador: pausado por vocês não é divergência de estoque.
       div_qtd: p.disp != null && !pausadoPorVoces(a) && p.disp !== a.qtd_ml,
       div_preco: alvo != null && (p.disp ?? 0) > 0 && a.preco_ml != null && Math.abs(alvo - a.preco_ml) >= 0.01,
-      ultima_acao: a.ultima_acao ?? null, acao_em: a.acao_em ?? null,
+      ultima_acao: a.ultima_acao ?? null, acao_em: a.acao_em ?? null, flex: a.flex ?? null,
     });
   }
   for (const s of semAnuncio) {

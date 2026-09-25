@@ -3,6 +3,7 @@
 import { rotaAdmin } from "./admin.ts";
 import { moduloDaRota, MODULOS as MODULOS_TODOS, pode, type Modulo, type Quem, verificarJwt } from "./auth.ts";
 import { CANAIS, montarCatalogo } from "./catalogo.ts";
+import { alterarFlex, configFlex } from "./flex.ts";
 import { checarBipe } from "./expedicao.ts";
 import { adicionarFamilia, atualizarCandidatos, auditarPublicacoes, casarPendentes, conferir, fila as filaPublicacao,
   importarFichas, processarFilaFichas, publicar } from "./publicacao.ts";
@@ -15,7 +16,7 @@ import { REGUA_PRECO, LIMITES_REGUA, simularReguas, validarReguas, type AnuncioS
 import { atualizarEnviosPendentes, baixarEtiquetas } from "./etiquetas.ts";
 import { processarNf, varrerNfs } from "./nf.ts";
 import { storeStub } from "./store.ts";
-import { type Env, ErroTemporario } from "./tipos.ts";
+import { type Env, ErroDefinitivo, ErroTemporario } from "./tipos.ts";
 
 export { MeliToken } from "./meli.ts";
 export { Store } from "./store.ts";
@@ -207,6 +208,29 @@ async function rotaApi(req: Request, env: Env, url: URL): Promise<Response> {
     const semAnuncio = pubErp ? (JSON.parse(pubErp) as { skus: Array<{ sku: string; produto: string; disp: number; preco_loja: number | null }> }).skus : [];
     const produtos = montarCatalogo(anuncios as never, erp, semAnuncio, reguas);
     return json({ erpEm: erpEm ? Number(erpEm) : null, canais: CANAIS, produtos });
+  }
+
+  // Envio Flex (menu Mercado Livre) ---------------------------------------------------
+  if (req.method === "GET" && p === "/api/flex") {
+    const [config, anuncios, novos] = await Promise.all([configFlex(env), store.todosAnuncios(), store.meta("flex_novos")]);
+    const erp = await erpDaUltimaRodada(env);
+    const lista = (anuncios as Array<Record<string, unknown>>)
+      .filter((a) => a.status === "active" || a.status === "paused")
+      .map((a) => ({ ...a, produto: erp.get(String(a.sku))?.produto ?? null, disp: erp.get(String(a.sku))?.disp ?? null }));
+    return json({ config, novosComFlex: novos === "1", anuncios: lista });
+  }
+  if (req.method === "POST" && p === "/api/flex") {
+    const b = (await req.json().catch(() => ({}))) as { ids?: unknown; ativar?: unknown };
+    if (typeof b.ativar !== "boolean") return json({ erro: "informe ativar: true ou false" }, 400);
+    try { return json({ resultados: await alterarFlex(env, b.ids, b.ativar, quem.email) }); }
+    catch (e) { if (e instanceof ErroDefinitivo) return json({ erro: e.message }, 400); throw e; }
+  }
+  if (req.method === "POST" && p === "/api/flex/novos") {
+    const b = (await req.json().catch(() => ({}))) as { ativo?: unknown };
+    if (typeof b.ativo !== "boolean") return json({ erro: "informe ativo: true ou false" }, 400);
+    await store.setMeta("flex_novos", b.ativo ? "1" : "0");
+    await store.log("info", null, `novos anúncios ${b.ativo ? "com" : "sem"} Flex por padrão — ${quem.email}`);
+    return json({ novosComFlex: b.ativo });
   }
 
   // Módulo Precificação -----------------------------------------------------------

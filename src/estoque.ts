@@ -13,7 +13,7 @@ import { meliEnviar, meliGet } from "./meli.ts";
 import { sqlTexto } from "./nota.ts";
 import { consultar } from "./sankhya.ts";
 import { storeStub } from "./store.ts";
-import { type AnuncioSync, type ErpSku, motivoParaAbortar, planejar, REGUA_PRECO, type Reguas } from "./sync.ts";
+import { type AnuncioSync, type ErpSku, flexDasTags, motivoParaAbortar, planejar, REGUA_PRECO, type Reguas } from "./sync.ts";
 import type { Env } from "./tipos.ts";
 
 const LOTE_RELEITURA = 40; // com cron a cada 2 min: ciclo completo ~23 min e ~29 mil gravações/dia no DO
@@ -30,6 +30,7 @@ type ItemMl = {
   listing_type_id?: string;
   catalog_product_id?: string | null;
   attributes?: Array<{ id: string; value_name?: string | null }>;
+  shipping?: { tags?: string[] } | null;
 };
 
 function paraAnuncio(b: ItemMl): AnuncioSync {
@@ -43,6 +44,7 @@ function paraAnuncio(b: ItemMl): AnuncioSync {
     preco_ml: b.price == null ? null : Number(b.price),
     listing_type: b.listing_type_id ?? "",
     catalog_product_id: b.catalog_product_id ?? null,
+    flex: flexDasTags(b.shipping?.tags),
   };
 }
 
@@ -52,7 +54,7 @@ async function lerItens(env: Env, ids: string[]): Promise<AnuncioSync[]> {
   for (let i = 0; i < ids.length; i += 20) {
     const lote = ids.slice(i, i + 20).join(",");
     const r = await meliGet<Array<{ code: number; body: ItemMl }>>(
-      env, `/items?ids=${lote}&attributes=id,status,sub_status,available_quantity,price,listing_type_id,catalog_product_id,attributes`,
+      env, `/items?ids=${lote}&attributes=id,status,sub_status,available_quantity,price,listing_type_id,catalog_product_id,attributes,shipping`,
     );
     for (const x of r) if (x.code === 200 && x.body?.id) out.push(paraAnuncio(x.body));
   }

@@ -214,6 +214,7 @@ export class Store extends DurableObject<Env> {
     // Ficha de catálogo de cada anúncio nosso: trava de duplicata (mesma ficha + mesmo tipo).
     const colsAn = new Set(this.sql.exec<{ name: string }>(`PRAGMA table_info(anuncios)`).toArray().map((c) => c.name));
     if (!colsAn.has("catalog_product_id")) this.sql.exec(`ALTER TABLE anuncios ADD COLUMN catalog_product_id TEXT`);
+    if (!colsAn.has("flex")) this.sql.exec(`ALTER TABLE anuncios ADD COLUMN flex INTEGER`);
     // Agendado pelo ML (pending/buffered): data em que a etiqueta é liberada (lead_time.buffering.date).
     if (!colsEnv.has("liberacao")) this.sql.exec(`ALTER TABLE envios ADD COLUMN liberacao TEXT`);
     const jaCorrigido = this.sql.exec<{ n: number }>(`SELECT COUNT(*) n FROM meta WHERE chave = 'despacho_v2'`).one().n;
@@ -362,11 +363,11 @@ export class Store extends DurableObject<Env> {
   }
 
   /** Pedido (pack/order), chave da NF e situação da venda de cada envio (faixa da NF e trava de cancelado). */
-  pedidosDosEnvios(ids: string[]): Array<{ shipment_id: string; chave: string | null; fiscal_key: string | null; situacao: string | null; status_ml: string | null; envio_status: string | null }> {
+  pedidosDosEnvios(ids: string[]): Array<{ shipment_id: string; chave: string | null; fiscal_key: string | null; situacao: string | null; status_ml: string | null; envio_status: string | null; logistica: string | null; nf_status: string | null }> {
     if (!ids.length) return [];
     return this.sql
-      .exec<{ shipment_id: string; chave: string | null; fiscal_key: string | null; situacao: string | null; status_ml: string | null; envio_status: string | null }>(
-        `SELECT e.shipment_id, COALESCE(n.chave, e.chave) chave, n.fiscal_key, p.situacao, p.status_ml, e.status envio_status
+      .exec<{ shipment_id: string; chave: string | null; fiscal_key: string | null; situacao: string | null; status_ml: string | null; envio_status: string | null; logistica: string | null; nf_status: string | null }>(
+        `SELECT e.shipment_id, COALESCE(n.chave, e.chave) chave, n.fiscal_key, p.situacao, p.status_ml, e.status envio_status, e.logistica, n.status nf_status
          FROM envios e LEFT JOIN nfs n ON n.shipment_id = e.shipment_id
          LEFT JOIN pedidos p ON p.chave = COALESCE(n.chave, e.chave)
          WHERE e.shipment_id IN (${ids.map(() => "?").join(",")})`,
@@ -380,12 +381,12 @@ export class Store extends DurableObject<Env> {
     return this.sql
       .exec(
         `SELECT e.shipment_id, COALESCE(n.chave, e.chave) chave, e.chave envio_order, p.data_ml, e.status, e.substatus, e.logistica, e.atualizado_em, e.impresso_em,
-                n.fiscal_key, n.nunota_nf, p.total, p.order_ids
+                n.fiscal_key, n.nunota_nf, n.status nf_status, p.total, p.order_ids
          FROM envios e
          LEFT JOIN nfs n ON n.shipment_id = e.shipment_id
          LEFT JOIN pedidos p ON p.chave = COALESCE(n.chave, e.chave)
          WHERE e.status = 'ready_to_ship' AND e.substatus IN ('ready_to_print','printed')
-         ORDER BY e.substatus DESC, e.atualizado_em DESC LIMIT 300`,
+         ORDER BY e.logistica = 'self_service' DESC, e.substatus DESC, e.atualizado_em DESC LIMIT 300`,
       )
       .toArray();
   }
@@ -413,7 +414,7 @@ export class Store extends DurableObject<Env> {
 
   todosAnuncios() {
     return this.sql
-      .exec(`SELECT item_id, sku, status, sub_status, qtd_ml, preco_ml, listing_type, lido_em, ultima_acao, acao_em
+      .exec(`SELECT item_id, sku, status, sub_status, qtd_ml, preco_ml, listing_type, lido_em, ultima_acao, acao_em, flex
              FROM anuncios WHERE status <> 'fora' ORDER BY sku`)
       .toArray();
   }
@@ -528,18 +529,24 @@ export class Store extends DurableObject<Env> {
       .toArray().map((r) => r.item_id);
   }
 
-  salvarAnuncios(lista: Array<{ item_id: string; sku: string; status: string; sub_status: string; qtd_ml: number; preco_ml: number | null; listing_type: string; catalog_product_id?: string | null }>): void {
+  salvarAnuncios(lista: Array<{ item_id: string; sku: string; status: string; sub_status: string; qtd_ml: number; preco_ml: number | null; listing_type: string; catalog_product_id?: string | null; flex?: 0 | 1 | null }>): void {
     const agora = Date.now();
     for (const a of lista) {
       this.sql.exec(
-        `INSERT INTO anuncios (item_id, sku, status, sub_status, qtd_ml, preco_ml, listing_type, lido_em, catalog_product_id)
-         VALUES (?,?,?,?,?,?,?,?,?)
+        `INSERT INTO anuncios (item_id, sku, status, sub_status, qtd_ml, preco_ml, listing_type, lido_em, catalog_product_id, flex)
+         VALUES (?,?,?,?,?,?,?,?,?,?)
          ON CONFLICT(item_id) DO UPDATE SET sku=excluded.sku, status=excluded.status, sub_status=excluded.sub_status,
            qtd_ml=excluded.qtd_ml, preco_ml=excluded.preco_ml, listing_type=excluded.listing_type, lido_em=excluded.lido_em,
-           catalog_product_id=COALESCE(excluded.catalog_product_id, anuncios.catalog_product_id)`,
-        a.item_id, a.sku, a.status, a.sub_status, a.qtd_ml, a.preco_ml, a.listing_type, agora, a.catalog_product_id ?? null,
+           catalog_product_id=COALESCE(excluded.catalog_product_id, anuncios.catalog_product_id),
+           flex=COALESCE(excluded.flex, anuncios.flex)`,
+        a.item_id, a.sku, a.status, a.sub_status, a.qtd_ml, a.preco_ml, a.listing_type, agora, a.catalog_product_id ?? null, a.flex ?? null,
       );
     }
+  }
+
+  /** Flex confirmado pelo ML depois de ligar/desligar (flex.ts). */
+  marcarFlex(itemId: string, flex: 0 | 1): void {
+    this.sql.exec(`UPDATE anuncios SET flex = ? WHERE item_id = ?`, flex, itemId);
   }
 
   // ------------------------------------------------------------------ publicação de anúncios
