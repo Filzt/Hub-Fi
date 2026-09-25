@@ -111,6 +111,12 @@ window.skyTabela = (() => {
           : "0 linhas";
         rod.querySelector(".tabela-paginas").innerHTML = paginas > 1 ? botoesPagina(e.pagina, paginas) : "";
       }
+      // Checkbox do cabeçalho: marcado só se todas as linhas desta página estiverem marcadas.
+      const todas = tabela.tHead.rows[0].querySelector("th.sel input[type=checkbox]");
+      if (todas) {
+        const caixas = visiveis.map((tr) => tr.querySelector("td.sel input[type=checkbox]:not(:disabled)")).filter(Boolean);
+        todas.checked = caixas.length > 0 && caixas.every((c) => c.checked);
+      }
       const barra = tabela.parentElement.querySelector(":scope > .tabela-barra");
       if (barra) {
         const n = Object.values(e.filtros).filter((v) => v.trim()).length;

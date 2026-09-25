@@ -400,8 +400,8 @@ async function renderExpedicao(sub) {
     atualizarSelecao();
   });
   if ($("#sel-todas")) $("#sel-todas").addEventListener("change", (ev) => {
-    // "Todas" = as que passam nos filtros da tabela, em todas as páginas (até 20).
-    const visiveis = skyTabela.filtradas($("#tb-exp").closest("table")).map((tr) => tr.querySelector("input[data-sel]:not(:disabled)")).filter(Boolean).map((c) => c.dataset.sel);
+    // Checkbox do cabeçalho marca só a página aberta (até 20).
+    const visiveis = $$("#tb-exp input[data-sel]:not(:disabled)").map((c) => c.dataset.sel);
     if (ev.target.checked) {
       for (const id of visiveis) {
         if (expedicao.sel.size >= MAX_SEL) { erro("Selecionei as primeiras " + MAX_SEL + " (máximo por impressão)."); break; }

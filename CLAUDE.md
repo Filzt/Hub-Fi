@@ -33,7 +33,9 @@ Regra do Filipe, 25/09/2026. Toda tabela do painel tem:
 Isso é automático (`public/tabela.js`): basta montar `<table>` com `<thead>` dentro de `#conteudo`.
 
 - Coluna sem título ou de checkbox (`th.sel`) fica de fora da ordenação, do filtro e do Excel.
-- "Selecionar todos" pega as linhas filtradas de todas as páginas: use `skyTabela.filtradas(table)`, não o que está visível na página.
+- O checkbox de "selecionar todos" no cabeçalho marca **só a página aberta** (Filipe, 25/09/2026).
+  - A tabela deixa no `<tbody>` só as linhas da página: basta ler as caixas do `tbody`.
+  - `skyTabela.filtradas(table)` devolve as linhas de todas as páginas, para quando precisar.
 - Tabela dentro da gaveta, ou com a classe `sem-tabela-padrao`, não recebe os controles.
 - O Excel é `.xlsx`, nunca CSV. No CSV o Excel estraga o nº do pedido do ML (16 dígitos) e a chave da NF.
 
