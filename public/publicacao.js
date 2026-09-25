@@ -237,7 +237,7 @@ function desenharFlex() {
   };
 }
 
-/** Envia em lotes de 50 (teto por chamada do SkyHub); o servidor confere cada anúncio no ML. */
+/** Envia em lotes de 20 (teto por chamada do SkyHub). A sincronização confirma no ML em seguida. */
 async function mudarFlex(ativar) {
   const ids = [...flexTela.sel];
   if (!ids.length) return;
@@ -251,9 +251,9 @@ async function mudarFlex(ativar) {
   $$("#flex-ligar, #flex-desligar").forEach((b) => { b.disabled = true; });
   const resultados = [];
   try {
-    for (let i = 0; i < ids.length; i += 50) {
-      $("#info-flex").textContent = (ativar ? "Ativando" : "Desativando") + "… " + Math.min(i + 50, ids.length) + " de " + ids.length;
-      const r = await post("/api/flex", { ids: ids.slice(i, i + 50), ativar });
+    for (let i = 0; i < ids.length; i += 20) {
+      $("#info-flex").textContent = (ativar ? "Ativando" : "Desativando") + "… " + Math.min(i + 20, ids.length) + " de " + ids.length;
+      const r = await post("/api/flex", { ids: ids.slice(i, i + 20), ativar });
       resultados.push(...r.resultados);
     }
   } finally {

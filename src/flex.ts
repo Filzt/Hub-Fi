@@ -13,7 +13,10 @@ import { ErroDefinitivo, type Env } from "./tipos.ts";
 import { meliEnviar, meliGet } from "./meli.ts";
 import { storeStub } from "./store.ts";
 
-export const MAX_FLEX_POR_CHAMADA = 50;
+// O Worker tem teto de 50 chamadas externas por requisição (plano da conta Cloudflare): 1 por
+// anúncio, com folga para renovar o token. Em 25/09/2026 lotes de 50 com GET de conferência
+// estouraram no 26º anúncio ("Too many subrequests").
+export const MAX_FLEX_POR_CHAMADA = 20;
 
 type Faixa = { capacity?: number; from?: number; to?: number; cutoff?: number };
 
@@ -54,8 +57,10 @@ export async function configFlex(env: Env): Promise<ConfigFlex> {
 export interface ResultadoFlex { item_id: string; ok: boolean; flex: 0 | 1 | null; detalhe: string }
 
 /**
- * Liga ou desliga o Flex nos anúncios pedidos, um por vez, e confere cada um lendo de volta.
- * Idempotente: pedir para ligar o que já está ligado conta como ok.
+ * Liga ou desliga o Flex nos anúncios pedidos, um por vez. Idempotente: ligar o que já está
+ * ligado conta como ok. Não relê na hora: o ML leva alguns segundos para refletir a mudança
+ * (em 25/09/2026 o GET logo depois do POST ainda dizia false em anúncios que ligaram). Quem
+ * confirma é a sincronização, que relê shipping.tags de cada anúncio (estoque.ts).
  */
 export async function alterarFlex(env: Env, ids: unknown, ativar: boolean, quem: string): Promise<ResultadoFlex[]> {
   const lista = [...new Set((Array.isArray(ids) ? ids : []).map((x) => String(x).trim().toUpperCase()))].filter((x) => /^MLB\d{6,15}$/.test(x));
@@ -64,10 +69,9 @@ export async function alterarFlex(env: Env, ids: unknown, ativar: boolean, quem:
   const store = storeStub(env);
   const out: ResultadoFlex[] = [];
   for (const id of lista) {
-    const caminho = `/flex/sites/MLB/items/${id}/v2`;
     let detalhe = "";
     try {
-      const r = await meliEnviar(env, ativar ? "POST" : "DELETE", caminho, null);
+      const r = await meliEnviar(env, ativar ? "POST" : "DELETE", `/flex/sites/MLB/items/${id}/v2`, null);
       const msg = String(r.corpo?.message ?? r.corpo?.error ?? "").slice(0, 120);
       if (r.status === 403) detalhe = "o anúncio não aceita Flex (item down)";
       else if (r.status === 409) detalhe = "o ML estava mexendo neste anúncio; tente de novo";
@@ -75,15 +79,9 @@ export async function alterarFlex(env: Env, ids: unknown, ativar: boolean, quem:
     } catch (e) {
       detalhe = (e as Error).message.slice(0, 160);
     }
-    // Confere lendo de volta: só conta como feito o que o ML confirma.
-    let flex: 0 | 1 | null = null;
-    try {
-      const g = await meliGet<{ has_flex?: boolean }>(env, caminho);
-      flex = g.has_flex === true ? 1 : g.has_flex === false ? 0 : null;
-    } catch { /* fica null */ }
-    if (flex !== null) await store.marcarFlex(id, flex);
-    const ok = flex === (ativar ? 1 : 0);
-    out.push({ item_id: id, ok, flex, detalhe: ok ? "" : detalhe || "o ML não confirmou a mudança" });
+    const ok = !detalhe;
+    if (ok) await store.marcarFlex(id, ativar ? 1 : 0);
+    out.push({ item_id: id, ok, flex: ok ? (ativar ? 1 : 0) : null, detalhe });
   }
   const feitos = out.filter((r) => r.ok).length;
   await store.log(feitos === out.length ? "info" : "aviso", null,
