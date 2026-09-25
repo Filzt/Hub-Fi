@@ -56,16 +56,6 @@ export type Nf = {
   atualizado_em: number;
 };
 
-/**
- * O envio saiu da nossa mão? Depois de impresso, o ML move o envio ao ser bipado na
- * agência/coleta: substatus além de ready_to_print/printed em ready_to_ship (ex.:
- * dropped_off) ou status shipped/delivered. HIPÓTESE a confirmar com o 1º envio
- * despachado pelo SkyHub (em 25/09/2026 só tínhamos visto ready_to_print e printed).
- */
-export function despachado(status: string, substatus: string): boolean {
-  if (["shipped", "delivered", "not_delivered"].includes(status)) return true;
-  return status === "ready_to_ship" && !["ready_to_print", "printed", "invoice_pending", ""].includes(substatus ?? "");
-}
 
 export class Store extends DurableObject<Env> {
   private sql: SqlStorage;
@@ -159,6 +149,11 @@ export class Store extends DurableObject<Env> {
     // Expedição em 3 fases: marca quando o envio saiu da nossa mão (bipado na agência).
     const colsEnv = new Set(this.sql.exec<{ name: string }>(`PRAGMA table_info(envios)`).toArray().map((c) => c.name));
     if (!colsEnv.has("despachado_em")) this.sql.exec(`ALTER TABLE envios ADD COLUMN despachado_em INTEGER`);
+    const jaCorrigido = this.sql.exec<{ n: number }>(`SELECT COUNT(*) n FROM meta WHERE chave = 'despacho_v2'`).one().n;
+    if (!jaCorrigido) {
+      this.sql.exec(`UPDATE envios SET despachado_em = NULL`);
+      this.sql.exec(`INSERT INTO meta (chave, valor) VALUES ('despacho_v2', ?)`, String(Date.now()));
+    }
   }
 
   /**
@@ -216,14 +211,14 @@ export class Store extends DurableObject<Env> {
     this.sql.exec(`UPDATE pedidos SET cancelamento = ?, cancelamento_em = ? WHERE chave = ?`, texto.slice(0, 500), Date.now(), chave);
   }
 
-  salvarEnvio(e: { shipment_id: string; chave: string | null; status: string; substatus: string; logistica: string }): void {
-    const agora = Date.now();
+  /** `despachado_em` vem do histórico do envio no ML (ver despachoDoEnvio em etiquetas.ts); o ML é a fonte. */
+  salvarEnvio(e: { shipment_id: string; chave: string | null; status: string; substatus: string; logistica: string; despachado_em?: number | null }): void {
     this.sql.exec(
       `INSERT INTO envios (shipment_id, chave, status, substatus, logistica, atualizado_em, despachado_em) VALUES (?,?,?,?,?,?,?)
        ON CONFLICT(shipment_id) DO UPDATE SET chave = COALESCE(excluded.chave, envios.chave), status = excluded.status,
          substatus = excluded.substatus, logistica = excluded.logistica, atualizado_em = excluded.atualizado_em,
-         despachado_em = COALESCE(envios.despachado_em, excluded.despachado_em)`,
-      e.shipment_id, e.chave, e.status, e.substatus, e.logistica, agora, despachado(e.status, e.substatus) ? agora : null,
+         despachado_em = excluded.despachado_em`,
+      e.shipment_id, e.chave, e.status, e.substatus, e.logistica, Date.now(), e.despachado_em ?? null,
     );
   }
 
@@ -264,7 +259,8 @@ export class Store extends DurableObject<Env> {
       .exec<{ id: string }>(
         `SELECT n.shipment_id id FROM nfs n LEFT JOIN envios e ON e.shipment_id = n.shipment_id
          WHERE n.shipment_id IS NOT NULL AND n.status IN ('enviado','ja_no_ml')
-           AND (e.shipment_id IS NULL OR e.status IN ('ready_to_ship','pending','handling'))
+           AND (e.shipment_id IS NULL OR e.status IN ('ready_to_ship','pending','handling')
+                OR (e.despachado_em IS NULL AND e.status IN ('shipped','delivered','not_delivered')))
          ORDER BY COALESCE(e.atualizado_em, 0) ASC LIMIT ?`,
         limite,
       )

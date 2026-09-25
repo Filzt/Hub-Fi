@@ -8,6 +8,7 @@
 // Imprimível: status ready_to_ship com substatus ready_to_print ou printed.
 // Baixar a etiqueta costuma marcar o envio como "printed" no ML.
 
+import { despachoDoEnvio } from "./despacho.ts";
 import { meliBaixar, meliGet } from "./meli.ts";
 import { sqlTexto } from "./nota.ts";
 import { type FaixaNf, formatarEmissao, juntarEtiquetas } from "./recorte.ts";
@@ -22,7 +23,10 @@ type Shipment = {
   logistic_type?: string;
   order_id?: number | string | null;
   pack_id?: number | string | null;
+  status_history?: { date_shipped?: string | null; date_delivered?: string | null } | null;
+  substatus_history?: Array<{ date?: string; substatus?: string; status?: string }> | null;
 };
+
 
 /** Relê um envio no ML e grava a situação (usado pelo webhook "shipments" e pela atualização manual). */
 export async function atualizarEnvio(env: Env, shipmentId: string): Promise<void> {
@@ -34,6 +38,7 @@ export async function atualizarEnvio(env: Env, shipmentId: string): Promise<void
     status: s.status ?? "",
     substatus: s.substatus ?? "",
     logistica: s.logistic_type ?? "",
+    despachado_em: despachoDoEnvio(s),
   });
 }
 
