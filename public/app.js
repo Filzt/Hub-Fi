@@ -175,7 +175,40 @@ async function imprimirEtiquetas(ids) {
 // O leitor manda o código + Enter: 1º Enter localiza, 2º Enter (ou o botão) imprime.
 // Aceita nº do pedido ML (pack ou order), nº do envio (código grande da etiqueta),
 // chave da NF (44 dígitos) ou número da NF.
+// Todo bipe passa antes pela checagem ao vivo no ML (/api/expedicao/checar): venda
+// cancelada abre o alerta "Pedido cancelado — não envie" e não imprime.
 const expedicao = { lista: [], achado: null, ultimoBipe: "" };
+
+function alertarCancelado(c) {
+  $("#cancelado-detalhe").innerHTML = "Pedido ML <b>" + esc(c.pedido || c.codigo) + "</b>" +
+    (c.motivo ? "<br>" + esc(c.motivo) : "") + (c.envio_status ? "<br>Envio: " + esc(c.envio_status) : "");
+  $("#cancelado").hidden = false;
+  $(".alerta-caixa").focus(); // foco na caixa: o Enter do leitor não fecha o alerta sozinho
+  // Bipe sonoro curto para chamar a atenção de quem está com o leitor na mão.
+  try {
+    const ac = new (window.AudioContext || window.webkitAudioContext)();
+    const o = ac.createOscillator(); o.type = "square"; o.frequency.value = 440; o.connect(ac.destination);
+    o.start(); o.stop(ac.currentTime + 0.6);
+  } catch { /* sem áudio, segue só o visual */ }
+}
+
+function fecharCancelado() {
+  $("#cancelado").hidden = true;
+  const campo = $("#bipe");
+  if (campo) { campo.value = ""; campo.focus(); }
+}
+
+/** Confere no ML se o pedido do código bipado foi cancelado. true = pode seguir. */
+async function checarCancelamento(codigo) {
+  const c = await api("/api/expedicao/checar?codigo=" + encodeURIComponent(codigo));
+  if (c.cancelado) {
+    expedicao.achado = null; expedicao.ultimoBipe = "";
+    $("#resultado-bipe").innerHTML = '<div class="nao-achado">Pedido ' + esc(c.pedido || codigo) + " CANCELADO — não envie.</div>";
+    alertarCancelado(c);
+    return false;
+  }
+  return true;
+}
 
 function casaBipe(e, codigo) {
   const c = codigo.replace(/\D/g, "");
@@ -204,7 +237,13 @@ async function renderExpedicao() {
     ev.preventDefault();
     const codigo = campo.value.trim();
     try {
-      if (expedicao.achado && (!codigo || codigo === expedicao.ultimoBipe)) return imprimirExpedicao(expedicao.achado);
+      if (expedicao.achado && (!codigo || codigo === expedicao.ultimoBipe)) return await imprimirExpedicao(expedicao.achado);
+      if (!codigo) return;
+      $("#resultado-bipe").innerHTML = '<div class="achado checando">Conferindo o pedido no Mercado Livre…</div>';
+      let seguir = true;
+      try { seguir = await checarCancelamento(codigo); }
+      catch (e) { erro("Não consegui conferir o cancelamento no ML (" + e.message + "). Confira no painel do ML antes de enviar."); }
+      if (!seguir) { campo.value = ""; return; }
       localizar(codigo);
     } catch (e) { erro(e); }
   });
@@ -442,9 +481,12 @@ document.addEventListener("click", async (ev) => {
     if (b.id === "fechar-gaveta") { $("#gaveta").hidden = true; return; }
     if (b.dataset.ped) return abrirPedido(b.dataset.ped);
     if (b.dataset.imprimir) return imprimirEtiquetas(b.dataset.imprimir);
+    if (b.id === "fechar-cancelado" || b.id === "ok-cancelado") return fecharCancelado();
     if (b.dataset.exp) {
       const e = expedicao.lista.find((x) => x.shipment_id === b.dataset.exp);
-      if (e) return imprimirExpedicao(e);
+      // Botão da tabela não passou pelo bipe: confere o cancelamento antes de imprimir.
+      if (e && (await checarCancelamento(e.shipment_id))) return imprimirExpedicao(e);
+      return;
     }
     if (b.dataset.reabrir) { await post("/api/eventos/" + b.dataset.reabrir + "/reabrir"); return navegar(); }
     if (b.dataset.acao === "gravar") {
@@ -468,7 +510,11 @@ document.addEventListener("click", async (ev) => {
     }
   } catch (e) { erro(e); b.disabled = false; }
 });
-document.addEventListener("keydown", (e) => { if (e.key === "Escape") $("#gaveta").hidden = true; });
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape") return;
+  if (!$("#cancelado").hidden) return fecharCancelado();
+  $("#gaveta").hidden = true;
+});
 $("#gaveta").addEventListener("click", (e) => { if (e.target.id === "gaveta") $("#gaveta").hidden = true; });
 window.addEventListener("hashchange", navegar);
 

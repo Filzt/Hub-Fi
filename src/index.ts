@@ -1,5 +1,6 @@
 // skyhub — entrada do Worker: webhook do ML, API do painel e cron de reprocessamento.
 
+import { checarBipe } from "./expedicao.ts";
 import { TOPICOS_ACEITOS } from "./config.ts";
 import { tokenStub } from "./meli.ts";
 import { cancelarNoErp, confirmarPedidoErp, gravarPedido, processarEvento, processarPedido } from "./processamento.ts";
@@ -180,6 +181,10 @@ async function rotaApi(req: Request, env: Env, url: URL): Promise<Response> {
 
   // Etiquetas ---------------------------------------------------------------------
   if (req.method === "GET" && p === "/api/etiquetas") return json({ etiquetas: await store.listarEtiquetas() });
+  // Expedição: cada bipe confere no ML, ao vivo, se a venda foi cancelada.
+  if (req.method === "GET" && p === "/api/expedicao/checar") {
+    return json(await checarBipe(env, String(url.searchParams.get("codigo") ?? "").slice(0, 200)));
+  }
   if (req.method === "POST" && p === "/api/etiquetas/atualizar") {
     try {
       return json({ atualizados: await atualizarEnviosPendentes(env, 20) });
