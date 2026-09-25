@@ -9,7 +9,9 @@
 // Baixar a etiqueta costuma marcar o envio como "printed" no ML.
 
 import { meliBaixar, meliGet } from "./meli.ts";
-import { juntarEtiquetas } from "./recorte.ts";
+import { sqlTexto } from "./nota.ts";
+import { type FaixaNf, formatarEmissao, juntarEtiquetas } from "./recorte.ts";
+import { consultar } from "./sankhya.ts";
 import { storeStub } from "./store.ts";
 import { type Env, ErroDefinitivo } from "./tipos.ts";
 
@@ -66,9 +68,16 @@ export async function baixarEtiquetas(env: Env, ids: string[], formato: "pdf" | 
   let corpo: Uint8Array;
   let tipo: string;
   if (formato === "pdf") {
-    const pdfs: Uint8Array[] = [];
-    for (const id of limpos) pdfs.push(new Uint8Array((await baixar([id])).corpo));
-    const { pdf, foraDoPadrao } = await juntarEtiquetas(pdfs);
+    // Sem a faixa, a etiqueta ainda serve para despachar: falha no Sankhya não trava a expedição.
+    const nfs = await faixasNf(env, limpos).catch(async (e) => {
+      await store.log("aviso", null, `faixa da NF indisponível (${(e as Error).message}) — etiquetas sem faixa`);
+      return new Map<string, FaixaNf>();
+    });
+    const itens: Array<{ pdf: Uint8Array; nf: FaixaNf | null }> = [];
+    for (const id of limpos) itens.push({ pdf: new Uint8Array((await baixar([id])).corpo), nf: nfs.get(id) ?? null });
+    const semNf = limpos.filter((id) => !nfs.has(id));
+    if (semNf.length) await store.log("aviso", null, `etiqueta sem faixa da NF (NF autorizada não encontrada): ${semNf.join(", ")}`);
+    const { pdf, foraDoPadrao } = await juntarEtiquetas(itens);
     if (foraDoPadrao) await store.log("aviso", null, `${foraDoPadrao} etiqueta(s) fora do layout A4 esperado — saíram sem recorte`);
     corpo = pdf;
     tipo = "application/pdf";
@@ -87,4 +96,36 @@ export async function baixarEtiquetas(env: Env, ids: string[], formato: "pdf" | 
       "Cache-Control": "no-store",
     },
   });
+}
+
+/**
+ * Dados da NF-e autorizada (TOP 1130) de cada envio, numa consulta só: número, série,
+ * chave e dhEmi do XML. O vínculo é o pedido do ML na OBSERVACAO. Com mais de uma NF
+ * autorizada no mesmo pedido, vale a que o ML tem (fiscal_key); senão, a mais recente.
+ */
+async function faixasNf(env: Env, ids: string[]): Promise<Map<string, FaixaNf>> {
+  const envios = (await storeStub(env).pedidosDosEnvios(ids)).filter((e) => e.chave && /^\d{6,20}$/.test(e.chave));
+  const saida = new Map<string, FaixaNf>();
+  if (!envios.length) return saida;
+  const linhas = await consultar(
+    env,
+    `SELECT SUBSTR(C.OBSERVACAO, 1, 16) OBS, C.NUNOTA, C.NUMNOTA, C.SERIENOTA, C.CHAVENFE,
+            DBMS_LOB.SUBSTR(N.XMLENVCLI, 25, DBMS_LOB.INSTR(N.XMLENVCLI, '<dhEmi>') + 7) DHEMI
+     FROM TGFCAB C LEFT JOIN TGFNFE N ON N.NUNOTA = C.NUNOTA
+     WHERE C.CODTIPOPER = 1130 AND C.STATUSNFE = 'A'
+       AND SUBSTR(C.OBSERVACAO, 1, 16) IN (${[...new Set(envios.map((e) => sqlTexto(String(e.chave))))].join(",")})
+     ORDER BY C.NUNOTA DESC`,
+  );
+  for (const e of envios) {
+    const daVenda = linhas.filter((l) => String(l.OBS) === e.chave && /^\d{44}$/.test(String(l.CHAVENFE ?? "")));
+    const nf = daVenda.find((l) => String(l.CHAVENFE) === e.fiscal_key) ?? daVenda[0];
+    if (!nf) continue;
+    saida.set(e.shipment_id, {
+      chave: String(nf.CHAVENFE),
+      numero: Number(nf.NUMNOTA),
+      serie: String(nf.SERIENOTA ?? "").trim() || "1",
+      emissao: formatarEmissao(String(nf.DHEMI ?? "")),
+    });
+  }
+  return saida;
 }

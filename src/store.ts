@@ -224,6 +224,19 @@ export class Store extends DurableObject<Env> {
       .toArray().map((r) => r.id);
   }
 
+  /** Pedido (pack/order) e chave da NF de cada envio, para a faixa da NF na etiqueta. */
+  pedidosDosEnvios(ids: string[]): Array<{ shipment_id: string; chave: string | null; fiscal_key: string | null }> {
+    if (!ids.length) return [];
+    return this.sql
+      .exec<{ shipment_id: string; chave: string | null; fiscal_key: string | null }>(
+        `SELECT e.shipment_id, COALESCE(n.chave, e.chave) chave, n.fiscal_key
+         FROM envios e LEFT JOIN nfs n ON n.shipment_id = e.shipment_id
+         WHERE e.shipment_id IN (${ids.map(() => "?").join(",")})`,
+        ...ids,
+      )
+      .toArray();
+  }
+
   /** Envios imprimíveis (ready_to_ship + ready_to_print/printed), com NF e pedido para exibir. */
   listarEtiquetas() {
     return this.sql
