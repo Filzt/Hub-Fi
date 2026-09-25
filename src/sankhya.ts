@@ -196,11 +196,16 @@ export async function incluirNota(env: Env, corpo: { requestBody: unknown }): Pr
  * (conferido em 24/09/2026 — a doc só mostra a confirmação via extensão Java).
  * Por isso o chamador confirma o resultado relendo TGFCAB.STATUSNOTA.
  */
-export async function confirmarNota(env: Env, nunota: number): Promise<void> {
+export async function confirmarNota(env: Env, nunota: number, eventosAceitos: string[] = []): Promise<void> {
   if (!Number.isInteger(nunota) || nunota <= 0) throw new ErroDefinitivo(`NUNOTA inválido: ${nunota}`);
-  await servico(env, "mgecom", "CACSP.confirmarNota", {
+  // clientEventList: resposta a perguntas de tela (ClientEvents) que o Sankhya faz na
+  // confirmação. Formato NÃO confirmado em documentação oficial — em teste controlado
+  // (1 pedido) desde 25/09/2026; ver TESTE_EVENTO_DTNEG em processamento.ts.
+  const corpo: Record<string, unknown> = {
     nota: { NUNOTA: { $: String(nunota) }, confirmacaoCentralNota: "true", ehPedidoWeb: "false" },
-  });
+  };
+  if (eventosAceitos.length) corpo.clientEventList = { clientEvent: eventosAceitos.map((e) => ({ $: e })) };
+  await servico(env, "mgecom", "CACSP.confirmarNota", corpo);
 }
 
 /**

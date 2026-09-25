@@ -403,7 +403,7 @@ export async function confirmarPedidoErp(env: Env, nunota: number): Promise<{ ok
     return { ok: false, status: null, motivo: `gravação desligada (MODO=${env.MODO})` };
   }
   const ler = async () =>
-    (await consultar(env, `SELECT CODTIPOPER, STATUSNOTA, TRIM(OBSERVACAO) OBS FROM TGFCAB WHERE NUNOTA = ${Number(nunota)}`))[0];
+    (await consultar(env, `SELECT CODTIPOPER, STATUSNOTA, TRIM(OBSERVACAO) OBS, TO_CHAR(DTNEG, 'DD/MM/YYYY') DTNEG FROM TGFCAB WHERE NUNOTA = ${Number(nunota)}`))[0];
   const antes = await ler();
   if (!antes) return { ok: false, status: null, motivo: "NUNOTA não encontrado" };
   if (Number(antes.CODTIPOPER) !== 1090 || !/^\d{16}/.test(String(antes.OBS ?? ""))) {
@@ -416,10 +416,33 @@ export async function confirmarPedidoErp(env: Env, nunota: number): Promise<{ ok
   } catch (e) {
     erro = (e as Error).message;
   }
-  const depois = await ler();
+  let depois = await ler();
+
+  // Venda antes da meia-noite gravada depois: o Sankhya pergunta se usa a data do servidor
+  // (ClientEvent br.com.utiliza.dtneg.servidor) e a API não tem como responder. TESTE ÚNICO
+  // aprovado pelo Filipe em 25/09/2026: responde ao evento em 1 pedido, registra a DTNEG
+  // antes/depois e não repete até ele aprovar (meta TESTE_EVENTO_DTNEG).
+  if (depois && String(depois.STATUSNOTA) !== "L" && erro.includes(EVENTO_DTNEG)) {
+    const store = storeStub(env);
+    if (!(await store.meta(TESTE_EVENTO_DTNEG))) {
+      await store.setMeta(TESTE_EVENTO_DTNEG, JSON.stringify({ nunota, em: Date.now(), dtnegAntes: depois.DTNEG }));
+      let erroTeste = "";
+      try { await confirmarNota(env, nunota, [EVENTO_DTNEG]); } catch (e) { erroTeste = (e as Error).message; }
+      const apos = await ler();
+      await store.log("aviso", String(antes.OBS ?? "").slice(0, 16),
+        `TESTE clientEvent ${EVENTO_DTNEG} no NUNOTA ${nunota}: STATUSNOTA ${depois.STATUSNOTA} → ${apos?.STATUSNOTA}, ` +
+        `DTNEG ${depois.DTNEG} → ${apos?.DTNEG}${erroTeste ? ` — erro: ${erroTeste.slice(0, 200)}` : ""}`);
+      await store.setMeta(TESTE_EVENTO_DTNEG, JSON.stringify({ nunota, em: Date.now(), dtnegAntes: depois.DTNEG,
+        dtnegDepois: apos?.DTNEG ?? null, statusDepois: apos?.STATUSNOTA ?? null, erro: erroTeste || null }));
+      depois = apos;
+    }
+  }
   const status = depois ? String(depois.STATUSNOTA) : null;
   return status === "L" ? { ok: true, status } : { ok: false, status, motivo: erro || `STATUSNOTA continua ${status}` };
 }
+
+const EVENTO_DTNEG = "br.com.utiliza.dtneg.servidor";
+const TESTE_EVENTO_DTNEG = "teste_evento_dtneg";
 
 // ---------------------------------------------------------------------------
 
