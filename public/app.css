@@ -246,3 +246,12 @@ tr.inativo td { opacity: .6; }
 .ficha-txt { display: flex; flex-direction: column; gap: 3px; min-width: 0; font-size: 13px; overflow-wrap: anywhere; }
 .tipos { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 12px; }
 #form-publicar h3 { font-size: 14px; margin: 14px 0 6px; }
+
+/* ------------------------------------------------------------------ menu por canais */
+.grupo-canal { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--lat-mut); padding: 8px 10px 2px; }
+.grupo-canal.breve em { font-style: normal; text-transform: none; letter-spacing: 0; opacity: .7; }
+.submenu a.nivel2 { padding-left: 22px; font-size: 12px; }
+.submenu a[hidden] { display: none; }
+.mkt.canal { cursor: default; }
+.links-canal { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+.links-canal a { color: var(--info); font-size: 14px; }

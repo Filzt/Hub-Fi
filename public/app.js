@@ -38,13 +38,20 @@ async function baixar(caminho) {
   return fetch(caminho, { headers: { Authorization: "Bearer " + (await skyAuth.token()) } });
 }
 
-const permitido = (mod) => !!eu && (eu.admin || (mod !== "admin" && eu.modulos.includes(mod)));
+// Módulos que moram dentro de "Canais" (cada canal: publicar, preço, integração).
+const DE_CANAL = ["publicacao", "precificacao", "integracao"];
+const permitido = (mod) => {
+  if (!eu) return false;
+  if (mod === "canais") return eu.admin || DE_CANAL.some((m) => eu.modulos.includes(m));
+  return eu.admin || (mod !== "admin" && eu.modulos.includes(mod));
+};
 
 /** Chamado pelo login.js quando a pessoa entra (ou já tinha sessão). */
 async function entrarNoPainel() {
   try { eu = await api("/api/eu"); }
   catch (e) { eu = null; return skyAuth.sair(e.status === 403 ? e.message : "Não consegui carregar seu acesso: " + e.message); }
   $$("nav a[data-mod]").forEach((a) => { a.hidden = !permitido(a.dataset.mod); });
+  $$("nav a[data-perm]").forEach((a) => { a.hidden = !permitido(a.dataset.perm); });
   $("#usuario").hidden = false;
   $("#usuario-nome").textContent = eu.nome || eu.email;
   $("#usuario-funcao").textContent = eu.funcao || "";
@@ -83,6 +90,7 @@ const MODULOS = {
   publicacao: { titulo: "Publicar anúncios", render: renderPublicacao },
   precificacao: { titulo: "Precificação", render: renderPrecificacao },
   integracao: { titulo: "Integração", render: renderIntegracao },
+  canais: { titulo: "Canais", render: renderCanais },
   admin: { titulo: "Administração", render: renderAdmin },
 };
 
@@ -101,21 +109,19 @@ async function navegar() {
     if (!primeiro) { $("#conteudo").innerHTML = '<p class="vazio">Sua função ainda não tem nenhum módulo liberado. Fale com o administrador.</p>'; return; }
     if (primeiro !== mod) { location.hash = "#" + primeiro; return; }
   }
-  $$("nav a[data-mod]").forEach((a) => a.classList.toggle("ativo", a.dataset.mod === mod));
-  $("#sub-integracao").classList.toggle("aberto", mod === "integracao");
-  $$("#sub-integracao a").forEach((a) => a.classList.toggle("ativo", mod === "integracao" && a.dataset.sub === sub));
-  $("#sub-expedicao").classList.toggle("aberto", mod === "expedicao");
-  $("#sub-admin").classList.toggle("aberto", mod === "admin");
-  $("#sub-publicacao").classList.toggle("aberto", mod === "publicacao");
-  $$("#sub-publicacao a").forEach((a) => a.classList.toggle("ativo", mod === "publicacao" && a.dataset.sub === sub));
-  $$("#sub-admin a").forEach((a) => a.classList.toggle("ativo", mod === "admin" && a.dataset.sub === sub));
-  $$("#sub-expedicao a").forEach((a) => a.classList.toggle("ativo", mod === "expedicao" && a.dataset.sub === sub));
+  // Menu: o módulo de canal acende "Canais"; cada submenu abre com o seu grupo.
+  const grupo = DE_CANAL.includes(mod) ? "canais" : mod;
+  $$("nav a[data-mod]").forEach((a) => a.classList.toggle("ativo", a.dataset.mod === grupo));
+  $$("nav .submenu[data-grupo]").forEach((s) => s.classList.toggle("aberto", s.dataset.grupo === grupo));
+  $$("nav a[data-rota]").forEach((a) => a.classList.toggle("ativo", a.dataset.rota === mod + "/" + sub));
   const subtitulo = mod === "integracao" ? ({ visao: "Visão geral", nfs: "NF-e → ML", logs: "Logs", eventos: "Eventos" }[sub] || "")
     : mod === "expedicao" ? ({ agendados: "Agendados", imprimir: "Para imprimir", impressos: "Impressos", despachados: "Despachados" }[sub] || "")
     : mod === "admin" ? ({ usuarios: "Usuários", funcoes: "Funções" }[sub] || "")
     : mod === "publicacao" ? ({ fila: "Fila", historico: "Histórico" }[sub] || "")
     : mod === "precificacao" && sub === "ml" ? "Mercado Livre" : "";
-  $("#titulo").textContent = MODULOS[mod].titulo + (subtitulo ? " · " + subtitulo : "");
+  // Módulo de canal leva o nome do canal na frente (hoje só o ML; a Nuvemshop entra aqui).
+  const canal = DE_CANAL.includes(mod) && !(mod === "precificacao" && sub !== "ml") ? "Mercado Livre · " : "";
+  $("#titulo").textContent = canal + MODULOS[mod].titulo + (subtitulo ? " · " + subtitulo : "");
   limparErro();
   $("#conteudo").innerHTML = '<p class="vazio">Carregando…</p>';
   try { await MODULOS[mod].render(sub); } catch (e) { erro(e); $("#conteudo").innerHTML = ""; }
@@ -572,6 +578,18 @@ async function renderProdutos() {
 /* ------------------------------------------------------------------ Precificação */
 const TIPOS = { gold_special: "Clássico", gold_pro: "Premium" };
 
+/* ------------------------------------------------------------------ Canais */
+// Um card por canal com o que ele tem (publicar, preço, integração), conforme a função.
+async function renderCanais() {
+  const link = (perm, href, texto) => (permitido(perm) ? '<a href="' + href + '">' + texto + "</a>" : "");
+  $("#conteudo").innerHTML = '<p class="mut" style="margin:0 0 12px">Pedidos e Expedição já mostram todos os canais juntos. Aqui fica o que é de cada canal.</p>' +
+    '<div class="marketplaces canais">' +
+    '<div class="mkt canal"><img src="/logos/mercadolivre.webp" alt="Mercado Livre"><span>Mercado Livre</span>' +
+    '<span class="links-canal">' + [link("publicacao", "#publicacao", "Publicar anúncios"), link("precificacao", "#precificacao/ml", "Precificação"),
+      link("integracao", "#integracao", "Integração")].filter(Boolean).join("") + "</span></div>" +
+    '<div class="mkt breve" aria-disabled="true"><span>Nuvemshop</span><span class="mut">próxima integração — loja da Skyline</span></div></div>';
+}
+
 async function renderPrecificacao(sub) {
   if (sub !== "ml") {
     // Ante-tela: um card por marketplace (hoje só o Mercado Livre está integrado).
@@ -591,7 +609,7 @@ async function renderPrecificacao(sub) {
   const hist = (d.historico || []).map((h) => "<tr><td>" + esc(dt(h.em)) + "</td><td>" + esc(h.responsavel) + "</td><td>" +
     Object.keys(TIPOS).map((t) => esc(TIPOS[t]) + ": ×" + esc(h.reguas[t].fator) + " + " + brl(h.reguas[t].soma)).join("<br>") + "</td><td>" + esc(h.motivo || "") + "</td></tr>").join("");
   $("#conteudo").innerHTML =
-    '<p style="margin:0 0 10px"><a href="#precificacao">← Marketplaces</a></p><div class="painel"><h3>Réguas vigentes — Mercado Livre</h3><p class="mut" style="margin:10px 12px 0">Preço no ML = preço de loja (tabela 0 do Sankhya) × multiplicador + acréscimo. ' +
+    '<p style="margin:0 0 10px"><a href="#canais">← Canais</a></p><div class="painel"><h3>Réguas vigentes — Mercado Livre</h3><p class="mut" style="margin:10px 12px 0">Preço no ML = preço de loja (tabela 0 do Sankhya) × multiplicador + acréscimo. ' +
     "Vale para os anúncios com saldo. Mudanças acima de 25% num anúncio não são aplicadas automaticamente. Depois de salvar, o ML é atualizado em até ~2 min (15 anúncios por rodada).</p>" +
     '<div class="reguas">' + Object.keys(TIPOS).map(cartao).join("") + "</div>" +
     '<div class="form-linha"><span class="mut">Fica registrado com o seu login (' + esc(eu ? eu.email : "") + ").</span>" +

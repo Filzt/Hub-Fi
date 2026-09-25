@@ -9,34 +9,35 @@
 <body>
 <div class="app">
   <aside class="lateral" aria-label="Módulos">
-    <div class="marca"><span class="logo-skyhub">SkyHub</span><span class="sub">ML ↔ Sankhya</span></div>
+    <div class="marca"><span class="logo-skyhub">SkyHub</span><span class="sub">Canais ↔ Sankhya</span></div>
     <nav>
       <a href="#pedidos" data-mod="pedidos">Pedidos</a>
+      <!-- Operação unificada (todos os canais numa fila): Pedidos e Expedição.
+           O que é de cada canal fica em Canais (decisão do Filipe, 25/09/2026). -->
       <a href="#expedicao" data-mod="expedicao">Expedição</a>
-      <div class="submenu" id="sub-expedicao">
-        <a href="#expedicao/agendados" data-sub="agendados">Agendados <span class="qtd" data-qtd="agendados"></span></a>
-        <a href="#expedicao" data-sub="imprimir">Para imprimir <span class="qtd" data-qtd="imprimir"></span></a>
-        <a href="#expedicao/impressos" data-sub="impressos">Impressos <span class="qtd" data-qtd="impressos"></span></a>
-        <a href="#expedicao/despachados" data-sub="despachados">Despachados <span class="qtd" data-qtd="despachados"></span></a>
+      <div class="submenu" id="sub-expedicao" data-grupo="expedicao">
+        <a href="#expedicao/agendados" data-rota="expedicao/agendados">Agendados <span class="qtd" data-qtd="agendados"></span></a>
+        <a href="#expedicao" data-rota="expedicao/imprimir">Para imprimir <span class="qtd" data-qtd="imprimir"></span></a>
+        <a href="#expedicao/impressos" data-rota="expedicao/impressos">Impressos <span class="qtd" data-qtd="impressos"></span></a>
+        <a href="#expedicao/despachados" data-rota="expedicao/despachados">Despachados <span class="qtd" data-qtd="despachados"></span></a>
       </div>
       <a href="#produtos" data-mod="produtos">Produtos</a>
-      <a href="#publicacao" data-mod="publicacao">Publicar anúncios</a>
-      <div class="submenu" id="sub-publicacao">
-        <a href="#publicacao" data-sub="fila">Fila</a>
-        <a href="#publicacao/historico" data-sub="historico">Histórico</a>
-      </div>
-      <a href="#precificacao" data-mod="precificacao">Precificação</a>
-      <a href="#integracao" data-mod="integracao">Integração</a>
-      <div class="submenu" id="sub-integracao">
-        <a href="#integracao" data-sub="visao">Visão geral</a>
-        <a href="#integracao/nfs" data-sub="nfs">NF-e → ML</a>
-        <a href="#integracao/logs" data-sub="logs">Logs</a>
-        <a href="#integracao/eventos" data-sub="eventos">Eventos</a>
+      <a href="#canais" data-mod="canais">Canais</a>
+      <div class="submenu" id="sub-canais" data-grupo="canais">
+        <span class="grupo-canal">Mercado Livre</span>
+        <a href="#publicacao" data-rota="publicacao/fila" data-perm="publicacao">Publicar anúncios</a>
+        <a href="#publicacao/historico" data-rota="publicacao/historico" data-perm="publicacao" class="nivel2">Histórico de publicação</a>
+        <a href="#precificacao/ml" data-rota="precificacao/ml" data-perm="precificacao">Precificação</a>
+        <a href="#integracao" data-rota="integracao/visao" data-perm="integracao">Integração</a>
+        <a href="#integracao/nfs" data-rota="integracao/nfs" data-perm="integracao" class="nivel2">NF-e → ML</a>
+        <a href="#integracao/logs" data-rota="integracao/logs" data-perm="integracao" class="nivel2">Logs</a>
+        <a href="#integracao/eventos" data-rota="integracao/eventos" data-perm="integracao" class="nivel2">Eventos</a>
+        <span class="grupo-canal breve">Nuvemshop <em>em breve</em></span>
       </div>
       <a href="#admin/usuarios" data-mod="admin" hidden>Administração</a>
-      <div class="submenu" id="sub-admin">
-        <a href="#admin/usuarios" data-sub="usuarios">Usuários</a>
-        <a href="#admin/funcoes" data-sub="funcoes">Funções</a>
+      <div class="submenu" id="sub-admin" data-grupo="admin">
+        <a href="#admin/usuarios" data-rota="admin/usuarios">Usuários</a>
+        <a href="#admin/funcoes" data-rota="admin/funcoes">Funções</a>
       </div>
     </nav>
     <div class="usuario" id="usuario" hidden>
