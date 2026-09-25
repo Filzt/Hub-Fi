@@ -1,4 +1,5 @@
-// SkyHub — painel (módulos Pedidos, Produtos, Precificação e Integração).
+// SkyHub — painel. Operação (Pedidos, Expedição), Catálogo (Produtos), Canais de venda
+// (Mercado Livre: publicar e precificar) e Sistema (Integrações, Acessos).
 // JS puro, sem build. Login pelo Supabase (login.js); cada chamada a /api/* leva o
 // access token da sessão e o Worker confere a função da pessoa (auth.ts).
 "use strict";
@@ -38,13 +39,15 @@ async function baixar(caminho) {
   return fetch(caminho, { headers: { Authorization: "Bearer " + (await skyAuth.token()) } });
 }
 
-// Módulos que moram dentro de "Canais" (cada canal: publicar, preço, integração).
-const DE_CANAL = ["publicacao", "precificacao", "integracao"];
+// Módulos do canal Mercado Livre (item "Mercado Livre" do menu). A Nuvemshop ganha o seu grupo.
+const DO_ML = ["publicacao", "precificacao"];
+const grupoDe = (mod) => (DO_ML.includes(mod) ? "ml" : mod);
 const permitido = (mod) => {
   if (!eu) return false;
-  if (mod === "canais") return eu.admin || DE_CANAL.some((m) => eu.modulos.includes(m));
+  if (mod === "ml") return eu.admin || DO_ML.some((m) => eu.modulos.includes(m));
   return eu.admin || (mod !== "admin" && eu.modulos.includes(mod));
 };
+const iniciais = (nome) => String(nome || "?").trim().split(/[\s@.]+/).filter(Boolean).slice(0, 2).map((p) => p[0].toUpperCase()).join("");
 
 /** Chamado pelo login.js quando a pessoa entra (ou já tinha sessão). */
 async function entrarNoPainel() {
@@ -52,10 +55,14 @@ async function entrarNoPainel() {
   catch (e) { eu = null; return skyAuth.sair(e.status === 403 ? e.message : "Não consegui carregar seu acesso: " + e.message); }
   $$("nav a[data-mod]").forEach((a) => { a.hidden = !permitido(a.dataset.mod); });
   $$("nav a[data-perm]").forEach((a) => { a.hidden = !permitido(a.dataset.perm); });
+  $$("nav [data-mod-breve]").forEach((a) => { a.hidden = !permitido(a.dataset.modBreve); });
+  // "Mercado Livre" abre a primeira tela que a função pode ver; seção sem item visível some.
+  $('nav a[data-mod="ml"]').href = permitido("publicacao") ? "#publicacao" : "#precificacao";
+  $$("nav .nav-secao").forEach((s) => { s.hidden = !$$("a[data-mod]", s).some((a) => !a.hidden); });
   $("#usuario").hidden = false;
   $("#usuario-nome").textContent = eu.nome || eu.email;
   $("#usuario-funcao").textContent = eu.funcao || "";
-  if (permitido("integracao")) carregarModos(); else $("#modos").innerHTML = "";
+  $("#usuario-avatar").textContent = iniciais(eu.nome || eu.email);
   atualizarContagemExpedicao();
   navegar();
 }
@@ -79,25 +86,46 @@ const btnAtualizar = (id, titulo) =>
   '<span class="atualizado mut" data-atualizado>atualizado ' + esc(hora(Date.now())) + "</span>";
 const marcarAtualizado = () => $$("[data-atualizado]").forEach((el) => { el.textContent = "atualizado " + hora(Date.now()); });
 
-function erro(e) { $("#msg").textContent = e && e.message ? e.message : String(e); }
-function limparErro() { $("#msg").textContent = ""; }
+function erro(e) { $("#msg-txt").textContent = e && e.message ? e.message : String(e); $("#msg").hidden = false; }
+function limparErro() { $("#msg-txt").textContent = ""; $("#msg").hidden = true; }
+const carregando = (txt = "Carregando…") => '<div class="carregando">' + esc(txt) + "</div>";
 
 /* ------------------------------------------------------------------ roteamento */
 const MODULOS = {
-  pedidos: { titulo: "Pedidos", render: renderPedidos },
+  pedidos: { titulo: "Pedidos", render: renderPedidos, desc: "Todas as vendas dos canais, da entrada até a entrega." },
   expedicao: { titulo: "Expedição", render: renderExpedicao },
-  produtos: { titulo: "Produtos", render: renderProdutos },
-  publicacao: { titulo: "Publicar anúncios", render: renderPublicacao },
-  precificacao: { titulo: "Precificação", render: renderPrecificacao },
-  integracao: { titulo: "Integração", render: renderIntegracao },
-  canais: { titulo: "Canais", render: renderCanais },
-  admin: { titulo: "Administração", render: renderAdmin },
+  produtos: { titulo: "Produtos", render: renderProdutos, desc: "Cada SKU do Sankhya e em quais canais de venda ele está." },
+  publicacao: { titulo: "Publicar anúncios", render: renderPublicacao, canal: "Mercado Livre" },
+  precificacao: { titulo: "Precificação", render: renderPrecificacao, canal: "Mercado Livre", desc: "Régua que transforma o preço de loja do Sankhya no preço do anúncio." },
+  integracao: { titulo: "Integrações", render: renderIntegracao },
+  admin: { titulo: "Acessos", render: renderAdmin },
+};
+const PADRAO_SUB = { integracao: "visao", expedicao: "imprimir", admin: "usuarios", publicacao: "fila", precificacao: "ml" };
+const SUBTITULOS = {
+  integracao: { visao: "Visão geral", nfs: "NF-e → ML", logs: "Logs", eventos: "Eventos" },
+  expedicao: { agendados: "Agendados", imprimir: "Para imprimir", impressos: "Impressos", despachados: "Despachados" },
+  admin: { usuarios: "Usuários", funcoes: "Funções" },
+  publicacao: { historico: "Histórico" },
+};
+const DESC_SUB = {
+  "integracao/visao": "Saúde da ligação entre os canais, o SkyHub e o Sankhya.",
+  "integracao/nfs": "Notas faturadas no Sankhya e o envio do XML ao Mercado Livre.",
+  "integracao/logs": "Registro do que o SkyHub fez, com erros e avisos.",
+  "integracao/eventos": "Notificações recebidas dos canais e o processamento de cada uma.",
+  "expedicao/agendados": "O Mercado Livre segura a etiqueta até a data de liberação.",
+  "expedicao/imprimir": "Bipe a etiqueta ou marque várias para imprimir de uma vez.",
+  "expedicao/impressos": "Etiquetas impressas, aguardando despacho na agência ou coleta.",
+  "expedicao/despachados": "Envios que o Mercado Livre registrou como despachados hoje.",
+  "admin/usuarios": "Quem entra no SkyHub e com qual função.",
+  "admin/funcoes": "O que cada função pode ver e fazer.",
+  "publicacao/fila": "SKUs com saldo no Sankhya e sem anúncio, com a ficha do ML sugerida. Nada vai ao ar sem o seu clique.",
+  "publicacao/historico": "Tudo o que foi publicado pelo SkyHub e a auditoria de cada anúncio.",
 };
 
 function rota() {
   const [mod, sub] = (location.hash.replace(/^#/, "") || "pedidos").split("/");
   const m = MODULOS[mod] ? mod : "pedidos";
-  return { mod: m, sub: sub || (m === "integracao" ? "visao" : m === "expedicao" ? "imprimir" : m === "admin" ? "usuarios" : m === "publicacao" ? "fila" : "") };
+  return { mod: m, sub: sub || PADRAO_SUB[m] || "" };
 }
 
 async function navegar() {
@@ -109,32 +137,39 @@ async function navegar() {
     if (!primeiro) { $("#conteudo").innerHTML = '<p class="vazio">Sua função ainda não tem nenhum módulo liberado. Fale com o administrador.</p>'; return; }
     if (primeiro !== mod) { location.hash = "#" + primeiro; return; }
   }
-  // Menu: o módulo de canal acende "Canais"; cada submenu abre com o seu grupo.
-  const grupo = DE_CANAL.includes(mod) ? "canais" : mod;
+  // Menu: cada item acende com o seu grupo e abre o próprio submenu.
+  const grupo = grupoDe(mod);
   $$("nav a[data-mod]").forEach((a) => a.classList.toggle("ativo", a.dataset.mod === grupo));
   $$("nav .submenu[data-grupo]").forEach((s) => s.classList.toggle("aberto", s.dataset.grupo === grupo));
   $$("nav a[data-rota]").forEach((a) => a.classList.toggle("ativo", a.dataset.rota === mod + "/" + sub));
-  const subtitulo = mod === "integracao" ? ({ visao: "Visão geral", nfs: "NF-e → ML", logs: "Logs", eventos: "Eventos" }[sub] || "")
-    : mod === "expedicao" ? ({ agendados: "Agendados", imprimir: "Para imprimir", impressos: "Impressos", despachados: "Despachados" }[sub] || "")
-    : mod === "admin" ? ({ usuarios: "Usuários", funcoes: "Funções" }[sub] || "")
-    : mod === "publicacao" ? ({ fila: "Fila", historico: "Histórico" }[sub] || "")
-    : mod === "precificacao" && sub === "ml" ? "Mercado Livre" : "";
-  // Módulo de canal leva o nome do canal na frente (hoje só o ML; a Nuvemshop entra aqui).
-  const canal = DE_CANAL.includes(mod) && !(mod === "precificacao" && sub !== "ml") ? "Mercado Livre · " : "";
-  $("#titulo").textContent = canal + MODULOS[mod].titulo + (subtitulo ? " · " + subtitulo : "");
+  fecharMenuMobile();
+  // Topo: canal em cima (kicker), título do módulo · subtela, e uma linha dizendo para que serve.
+  const m = MODULOS[mod];
+  const subtitulo = (SUBTITULOS[mod] || {})[sub] || "";
+  $("#kicker").textContent = m.canal || "";
+  $("#kicker").hidden = !m.canal;
+  $("#titulo").textContent = m.titulo + (subtitulo ? " · " + subtitulo : "");
+  $("#desc").textContent = DESC_SUB[mod + "/" + sub] || m.desc || "";
+  document.title = m.titulo + " · SkyHub";
   limparErro();
-  $("#conteudo").innerHTML = '<p class="vazio">Carregando…</p>';
+  $("#conteudo").innerHTML = carregando();
   try { await MODULOS[mod].render(sub); } catch (e) { erro(e); $("#conteudo").innerHTML = ""; }
 }
 
-async function carregarModos() {
-  try {
-    const s = await api("/api/integracao");
-    const nomes = { pedidos: "pedidos", xml: "XML", cancelamento: "cancelamento", estoque: "estoque", preco: "preço" };
-    $("#modos").innerHTML = Object.entries(s.modos).map(([k, v]) =>
-      '<span class="chip ' + (v === "automatico" ? "auto" : v === "manual" ? "manual" : "") + '" title="modo ' + esc(v) + '">' + esc(nomes[k] || k) + ": " + esc(v) + "</span>").join("");
-  } catch { /* o erro aparece no módulo */ }
+/** Menu no celular: abre e fecha pelo botão; fecha sozinho ao trocar de tela. */
+function fecharMenuMobile() {
+  $("#lateral").classList.remove("aberta");
+  $("#abrir-menu").setAttribute("aria-expanded", "false");
 }
+$("#abrir-menu").addEventListener("click", () => {
+  const aberta = $("#lateral").classList.toggle("aberta");
+  $("#abrir-menu").setAttribute("aria-expanded", String(aberta));
+});
+$("#fechar-msg").addEventListener("click", limparErro);
+
+/** Selo do canal de origem (pedido, envio). Hoje todo pedido é do ML. */
+const SELOS = { ml: '<span class="selo-canal" title="Mercado Livre">ML</span>' };
+const seloCanal = (canal) => SELOS[canal || "ml"] || "";
 
 /* ------------------------------------------------------------------ Pedidos */
 const FASE_INFO = {
@@ -165,7 +200,7 @@ async function renderPedidos() {
       ? '<button type="button" class="primario" data-imprimir="' + esc(imprimiveis.map((p) => p.shipment_id).join(",")) + '">Imprimir etiquetas (' + imprimiveis.length + ")</button>" : "";
     return '<div class="coluna ' + f + '"><div class="coluna-topo"><div class="t">' + esc(FASE_INFO[f].nome) + '<span class="qtd">' + lista.length + "</span></div>" +
       '<div class="desc">' + esc(FASE_INFO[f].desc) + "</div>" + acaoColuna + '</div><div class="coluna-corpo">' +
-      (lista.length ? lista.map(cartaoPedido).join("") : '<span class="mut" style="font-size:12px">nenhum</span>') + "</div></div>";
+      (lista.length ? lista.map(cartaoPedido).join("") : '<span class="mut">nenhum</span>') + "</div></div>";
   }).join("");
   $("#conteudo").innerHTML = barra + '<div class="esteira">' + colunas + "</div>";
   $("#dias").onchange = (e) => { estado.fluxoDias = Number(e.target.value); navegar(); };
@@ -184,7 +219,7 @@ function cartaoPedido(p) {
   if (p.gravacao === "erro") tags.push('<span class="tag err">erro na gravação</span>');
   if (p.nf_status === "erro" || p.nf_status === "divergente") tags.push('<span class="tag err">NF: ' + esc(p.nf_status) + "</span>");
   if (p.cancelamento) tags.push('<span class="tag ' + (/^cancelado/.test(p.cancelamento) ? "ok" : "warn") + '">' + esc(p.cancelamento.split(":")[0]) + "</span>");
-  return '<button type="button" class="ped" data-ped="' + esc(p.chave) + '"><div class="l1"><span class="ch">…' + esc(String(p.chave).slice(-8)) + '</span><span class="vl">' + brl(p.total) + "</span></div>" +
+  return '<button type="button" class="ped" data-ped="' + esc(p.chave) + '"><div class="l1"><span class="ch">' + seloCanal(p.canal) + " …" + esc(String(p.chave).slice(-8)) + '</span><span class="vl">' + brl(p.total) + "</span></div>" +
     '<div class="l2">' + esc(dtIso(p.data_ml)) + (p.codparc ? " · parceiro " + esc(p.codparc) : "") + '</div><div class="l3">' + tags.join("") + "</div></button>";
 }
 
@@ -340,7 +375,7 @@ async function renderExpedicao(sub) {
     (expedicao.fase === "despachados" ? '<p class="dica">Despachados hoje: o ML registrou a entrada do pacote na agência ou coleta.</p>' : "") +
     (expedicao.fase === "agendados" ? '<p class="dica">Agendados pelo Mercado Livre: a etiqueta só é liberada na data indicada. Separe a caixa e aguarde; a NF sobe sozinha quando o ML liberar.</p>' : "") +
     '<div class="acoes-sel"' + (soLista ? " hidden" : "") + '><button type="button" class="primario" id="imprimir-sel" disabled>Imprimir selecionadas</button><span class="dica" id="info-sel"></span></div>' +
-    '<div class="painel"><table><thead><tr><th class="sel">' + (soLista ? "" : '<input type="checkbox" id="sel-todas" aria-label="Selecionar todas as visíveis">') + '</th><th>Pedido ML</th><th>NF</th><th>Envio</th><th>Venda</th><th class="n">Total</th><th>Situação</th><th></th></tr></thead><tbody id="tb-exp"></tbody></table></div>';
+    '<div class="painel"><table><thead><tr><th class="sel">' + (soLista ? "" : '<input type="checkbox" id="sel-todas" aria-label="Selecionar todas as visíveis">') + '</th><th>Pedido</th><th>NF</th><th>Envio</th><th>Venda</th><th class="n">Total</th><th>Situação</th><th></th></tr></thead><tbody id="tb-exp"></tbody></table></div>';
   // Seleção que ficou de uma lista anterior só vale para envios ainda liberados.
   const ids = new Set(d.etiquetas.map((e) => e.shipment_id));
   expedicao.sel = new Set([...expedicao.sel].filter((id) => ids.has(id)));
@@ -418,7 +453,7 @@ function desenharExpedicao() {
   const linhas = focoId ? expedicao.lista.filter((e) => e.shipment_id === focoId) : expedicao.lista.filter(FASE_EXP[expedicao.fase]);
   $("#tb-exp").innerHTML = linhas.map((e) => '<tr class="' + (e.shipment_id === focoId ? "foco" : "") + (expedicao.sel.has(e.shipment_id) ? " sel" : "") + '">' +
     '<td class="sel"><input type="checkbox" data-sel="' + esc(e.shipment_id) + '"' + (expedicao.sel.has(e.shipment_id) ? " checked" : "") +
-    ' aria-label="Selecionar pedido ' + esc(e.chave || e.shipment_id) + '"></td><td><b>' + esc(e.chave || "—") + "</b></td><td>" +
+    ' aria-label="Selecionar pedido ' + esc(e.chave || e.shipment_id) + '"></td><td>' + seloCanal(e.canal) + " <b>" + esc(e.chave || "—") + "</b></td><td>" +
     esc(nfDaChave(e.fiscal_key) || "—") + "</td><td>" + esc(e.shipment_id) + "</td><td>" + esc(dtIso(e.data_ml)) + '</td><td class="n">' + brl(e.total) + "</td><td>" +
     (e.substatus === "ready_to_print" ? '<span class="tag info">para imprimir</span>' : '<span class="tag ok">já impressa</span>') +
     '</td><td><button type="button" data-exp="' + esc(e.shipment_id) + '">' + (e.substatus === "printed" ? "Reimprimir" : "Imprimir") + "</button></td></tr>").join("") ||
@@ -536,69 +571,115 @@ async function imprimirExpedicao(e) {
 }
 
 /* ------------------------------------------------------------------ Produtos */
+// Uma linha por SKU do Sankhya (saldo e preço de loja) e a presença em cada canal de venda.
+// Os cartões do topo são os filtros. Clicar na linha abre o detalhe por canal.
+const TXT_SIT = { ativo: "ativo", pausado: "pausado", sem_estoque: "sem estoque", inativo: "inativo", nao_anunciado: "não anunciado" };
+const prod = { dados: null, filtro: "todos", busca: "", limite: 300 };
+const temDiv = (p, campo) => p.canais.ml.anuncios.some((a) => a[campo]);
+const FILTROS_PROD = [
+  ["todos", "Todos os SKUs", () => true],
+  ["saldo", "Com saldo no Sankhya", (p) => p.disp > 0],
+  ["ml", "Ativos no Mercado Livre", (p) => p.canais.ml.situacao === "ativo"],
+  ["fora", "Com saldo e fora dos canais", (p) => p.disp > 0 && p.canais.ml.situacao !== "ativo"],
+  ["pausados", "Pausados por vocês", (p) => p.canais.ml.situacao === "pausado"],
+  ["ajustar", "Estoque ou preço a ajustar", (p) => temDiv(p, "div_qtd") || temDiv(p, "div_preco")],
+];
+
 async function renderProdutos() {
-  const d = await api("/api/produtos");
+  prod.dados = await api("/api/produtos");
+  desenharProdutos();
+}
+
+function seloSituacao(canal, s) {
+  if (!canal.integrado) return '<span class="canal off" title="' + esc(canal.nome) + ': integração em breve">' + esc(canal.nome) + "</span>";
+  const n = s.anuncios.length;
+  return '<span class="canal ' + esc(s.situacao) + '" title="' + esc(canal.nome + ": " + TXT_SIT[s.situacao] + (n ? " · " + n + " anúncio(s)" : "")) + '"><span class="ponto"></span>' +
+    esc(canal.nome) + " · <b>" + esc(TXT_SIT[s.situacao]) + "</b>" + (n > 1 ? " ×" + n : "") + "</span>";
+}
+
+function desenharProdutos() {
+  const d = prod.dados;
   const lista = d.produtos;
-  const divQtd = (p) => p.disp != null && !String(p.sub_status).includes("paused_by_seller") && p.disp !== p.qtd_ml;
-  const divPreco = (p) => p.preco_alvo != null && p.disp > 0 && p.preco_ml != null && Math.abs(p.preco_alvo - p.preco_ml) >= 0.01;
-  const c = {
-    total: lista.length,
-    ativos: lista.filter((p) => p.status === "active").length,
-    semEstoque: lista.filter((p) => String(p.sub_status).includes("out_of_stock")).length,
-    pausadosVendedor: lista.filter((p) => String(p.sub_status).includes("paused_by_seller")).length,
-    divQtd: lista.filter(divQtd).length,
-    divPreco: lista.filter(divPreco).length,
-  };
-  const b = estado.busca.trim().toUpperCase();
-  let filtrados = lista.filter((p) => !b || String(p.sku).includes(b) || String(p.item_id).includes(b));
-  if (estado.filtroProd === "saldo") filtrados = filtrados.filter((p) => p.disp > 0);
-  if (estado.filtroProd === "divergentes") filtrados = filtrados.filter((p) => divQtd(p) || divPreco(p));
-  if (estado.filtroProd === "pausados") filtrados = filtrados.filter((p) => String(p.sub_status).includes("paused_by_seller"));
-  const statusTxt = (p) => String(p.sub_status).includes("paused_by_seller") ? '<span class="tag warn">pausado por vocês</span>'
-    : p.status === "active" ? '<span class="tag ok">ativo</span>' : String(p.sub_status).includes("out_of_stock") ? '<span class="tag">sem estoque</span>' : '<span class="tag">' + esc(p.status) + "</span>";
+  const b = prod.busca.trim().toUpperCase();
+  const f = (FILTROS_PROD.find(([k]) => k === prod.filtro) || FILTROS_PROD[0])[2];
+  const filtrados = lista.filter(f).filter((p) => !b || p.sku.includes(b) || String(p.produto || "").toUpperCase().includes(b) ||
+    p.canais.ml.anuncios.some((a) => a.item_id.includes(b)));
+  const linhas = filtrados.slice(0, prod.limite).map((p) => {
+    const avisos = (temDiv(p, "div_qtd") ? '<span class="tag warn">estoque a ajustar</span>' : "") + (temDiv(p, "div_preco") ? '<span class="tag warn">preço a ajustar</span>' : "");
+    const ult = p.canais.ml.anuncios.filter((a) => a.acao_em).sort((x, y) => y.acao_em - x.acao_em)[0];
+    return '<tr class="clicavel" data-sku="' + esc(p.sku) + '"><td><b>' + esc(p.sku) + '</b></td><td class="prod-nome">' + esc(p.produto || "—") + "</td>" +
+      '<td class="n">' + (p.disp == null ? '<span class="mut">sem cadastro</span>' : esc(p.disp)) + '</td><td class="n">' + brl(p.preco_loja) + "</td>" +
+      '<td><div class="canais-linha">' + d.canais.map((c) => seloSituacao(c, p.canais[c.id] || { situacao: "nao_anunciado", anuncios: [] })).join("") + avisos + "</div></td>" +
+      '<td class="mut" title="' + esc(ult ? ult.ultima_acao : "") + '">' + (ult ? esc(haQuanto(ult.acao_em)) : "—") + "</td></tr>";
+  }).join("");
   $("#conteudo").innerHTML =
-    '<div class="cards">' + [["Anúncios", c.total], ["Ativos", c.ativos], ["Sem estoque", c.semEstoque], ["Pausados por vocês", c.pausadosVendedor],
-      ["Estoque a ajustar", c.divQtd], ["Preço a ajustar", c.divPreco]].map(([t, v]) => '<div class="card"><b>' + v + "</b><span>" + t + "</span></div>").join("") + "</div>" +
-    '<div class="barra"><input id="busca-prod" type="search" placeholder="SKU ou MLB" value="' + esc(estado.busca) + '" aria-label="Buscar produto">' +
-    '<select id="filtro-prod" aria-label="Filtro">' + [["todos", "Todos"], ["saldo", "Com saldo no ERP"], ["divergentes", "A ajustar"], ["pausados", "Pausados por vocês"]]
-      .map(([v, t]) => '<option value="' + v + '"' + (estado.filtroProd === v ? " selected" : "") + ">" + t + "</option>").join("") + "</select>" +
-    '<span class="espaco"></span><span class="mut">ERP lido ' + esc(haQuanto(d.erpEm)) + '</span><button id="rodar-estoque" type="button">Sincronizar agora</button></div>' +
-    '<div class="painel"><table><thead><tr><th>SKU</th><th>Anúncio</th><th>Situação no ML</th><th class="n">Estoque ERP</th><th class="n">Estoque ML</th>' +
-    '<th class="n">Preço loja</th><th class="n">Preço ML</th><th class="n">Preço alvo</th><th>Última ação</th></tr></thead><tbody>' +
-    filtrados.slice(0, 600).map((p) => "<tr><td>" + esc(p.sku || "—") + '</td><td><a href="https://produto.mercadolivre.com.br/' + esc(String(p.item_id).replace(/^MLB/, "MLB-")) + '" target="_blank" rel="noopener">' + esc(p.item_id) + "</a></td>" +
-      "<td>" + statusTxt(p) + '</td><td class="n">' + (p.disp == null ? '<span class="mut">sem cadastro</span>' : esc(p.disp)) + '</td><td class="n' + (divQtd(p) ? " warn" : "") + '">' + esc(p.qtd_ml) +
-      '</td><td class="n">' + brl(p.preco_loja) + '</td><td class="n' + (divPreco(p) ? " warn" : "") + '">' + brl(p.preco_ml) + '</td><td class="n">' + brl(p.preco_alvo) +
-      '</td><td class="mut" title="' + esc(p.ultima_acao || "") + '">' + (p.acao_em ? esc(hora(p.acao_em)) + " " + esc(String(p.ultima_acao || "").slice(0, 40)) : "—") + "</td></tr>").join("") +
-    "</tbody></table></div>" + (filtrados.length > 600 ? '<p class="mut">Mostrando 600 de ' + filtrados.length + ". Use a busca.</p>" : "");
-  $("#busca-prod").oninput = (e) => { estado.busca = e.target.value; clearTimeout(renderProdutos.t); renderProdutos.t = setTimeout(navegar, 300); };
-  $("#filtro-prod").onchange = (e) => { estado.filtroProd = e.target.value; navegar(); };
-  $("#rodar-estoque").onclick = async (e) => { e.target.disabled = true; e.target.textContent = "Sincronizando…"; await post("/api/estoque/rodar"); navegar(); };
+    '<div class="cards">' + FILTROS_PROD.map(([k, t, fn]) => {
+      const n = lista.filter(fn).length;
+      return '<button type="button" class="card clicavel' + (prod.filtro === k ? " ativo" : "") + ((k === "fora" || k === "ajustar") && n ? " alerta" : "") +
+        '" data-filtro-prod="' + k + '" aria-pressed="' + (prod.filtro === k) + '"><b>' + n.toLocaleString("pt-BR") + "</b><span>" + esc(t) + "</span></button>";
+    }).join("") + "</div>" +
+    '<div class="barra"><input id="busca-prod" type="search" placeholder="SKU, produto ou MLB" value="' + esc(prod.busca) + '" aria-label="Buscar produto">' +
+    '<span class="espaco"></span><span class="atualizado">Sankhya lido ' + esc(haQuanto(d.erpEm)) + "</span>" +
+    '<button id="rodar-estoque" type="button">Sincronizar agora</button></div>' +
+    '<div class="painel"><table><thead><tr><th>SKU</th><th>Produto</th><th class="n">Saldo</th><th class="n">Preço loja</th><th>Canais</th><th>Última ação</th></tr></thead><tbody id="tb-prod">' +
+    (linhas || '<tr><td colspan="6" class="vazio">Nenhum SKU neste filtro.</td></tr>') + "</tbody></table>" +
+    (filtrados.length > prod.limite ? '<div class="mais"><button type="button" id="mais-prod">Mostrar mais (' + (filtrados.length - prod.limite).toLocaleString("pt-BR") + " restantes)</button></div>" : "") + "</div>";
+  $("#busca-prod").oninput = (e) => {
+    prod.busca = e.target.value; prod.limite = 300;
+    clearTimeout(desenharProdutos.t);
+    desenharProdutos.t = setTimeout(() => { desenharProdutos(); const x = $("#busca-prod"); x.focus(); x.setSelectionRange(x.value.length, x.value.length); }, 250);
+  };
+  $("#rodar-estoque").onclick = async (e) => {
+    e.target.disabled = true; e.target.textContent = "Sincronizando…";
+    try { await post("/api/estoque/rodar"); avisar("Estoque e preço sincronizados."); await renderProdutos(); }
+    catch (x) { erro(x); e.target.disabled = false; e.target.textContent = "Sincronizar agora"; }
+  };
+  if ($("#mais-prod")) $("#mais-prod").onclick = () => { prod.limite += 300; desenharProdutos(); };
+}
+
+function situacaoAnuncio(a) {
+  const s = String(a.sub_status);
+  if (s.includes("paused_by_seller")) return '<span class="tag warn">pausado por vocês</span>';
+  if (a.status === "active") return '<span class="tag ok">ativo</span>';
+  if (s.includes("out_of_stock")) return '<span class="tag">sem estoque</span>';
+  return '<span class="tag">' + esc(a.status) + "</span>";
+}
+
+function abrirProduto(sku) {
+  const p = prod.dados && prod.dados.produtos.find((x) => x.sku === sku);
+  if (!p) return;
+  const blocos = prod.dados.canais.map((c) => {
+    const s = p.canais[c.id];
+    let corpo;
+    if (!c.integrado) corpo = '<p class="mut">Integração em breve: a loja da Skyline entra aqui.</p>';
+    else if (!s.anuncios.length) {
+      corpo = '<p class="mut">Sem anúncio no ' + esc(c.nome) + "." + (p.disp > 0 && permitido("publicacao") ? " Tem saldo, dá para publicar.</p>" +
+        '<p><button type="button" class="primario" data-ir-publicar="' + esc(p.sku) + '">Abrir em Publicar anúncios</button></p>' : "</p>");
+    } else {
+      corpo = '<div class="tabela"><table><thead><tr><th>Anúncio</th><th>Tipo</th><th>Situação</th><th class="n">Estoque</th><th class="n">Preço</th><th class="n">Preço alvo</th></tr></thead><tbody>' +
+        s.anuncios.map((a) => '<tr><td><a href="https://produto.mercadolivre.com.br/' + esc(a.item_id.replace(/^MLB/, "MLB-")) + '" target="_blank" rel="noopener">' + esc(a.item_id) + "</a></td>" +
+          "<td>" + esc(TIPOS[a.listing_type] || a.listing_type) + "</td><td>" + situacaoAnuncio(a) + '</td><td class="n' + (a.div_qtd ? " warn" : "") + '">' + esc(a.qtd_ml) +
+          '</td><td class="n' + (a.div_preco ? " warn" : "") + '">' + brl(a.preco_ml) + '</td><td class="n">' + brl(a.preco_alvo) + "</td></tr>" +
+          (a.ultima_acao ? '<tr><td colspan="6" class="mut">Última ação ' + esc(dt(a.acao_em)) + ": " + esc(a.ultima_acao) + "</td></tr>" : "")).join("") +
+        "</tbody></table></div>";
+    }
+    return '<div class="bloco-canal"><div class="cab"><b>' + esc(c.nome) + "</b>" + (c.integrado ? seloSituacao(c, s) : '<span class="canal off">em breve</span>') + "</div>" + corpo + "</div>";
+  }).join("");
+  $("#gaveta-titulo").textContent = p.sku;
+  $("#gaveta-corpo").innerHTML =
+    '<dl class="dados"><dt>Produto</dt><dd>' + esc(p.produto || "—") + "</dd>" +
+    "<dt>Saldo no Sankhya</dt><dd>" + (p.disp == null ? "SKU não encontrado no cadastro" : esc(p.disp)) + "</dd>" +
+    "<dt>Preço de loja</dt><dd>" + brl(p.preco_loja) + ' <span class="mut">(tabela 0)</span></dd>' +
+    "<dt>Cadastro</dt><dd>" + (p.ativo_erp == null ? "—" : p.ativo_erp ? "ativo" : '<span class="warn">inativo no Sankhya</span>') + "</dd></dl>" +
+    '<p class="secao-gaveta">Canais de venda</p>' + blocos;
+  $("#gaveta").hidden = false;
 }
 
 /* ------------------------------------------------------------------ Precificação */
 const TIPOS = { gold_special: "Clássico", gold_pro: "Premium" };
 
-/* ------------------------------------------------------------------ Canais */
-// Um card por canal com o que ele tem (publicar, preço, integração), conforme a função.
-async function renderCanais() {
-  const link = (perm, href, texto) => (permitido(perm) ? '<a href="' + href + '">' + texto + "</a>" : "");
-  $("#conteudo").innerHTML = '<p class="mut" style="margin:0 0 12px">Pedidos e Expedição já mostram todos os canais juntos. Aqui fica o que é de cada canal.</p>' +
-    '<div class="marketplaces canais">' +
-    '<div class="mkt canal"><img src="/logos/mercadolivre.webp" alt="Mercado Livre"><span>Mercado Livre</span>' +
-    '<span class="links-canal">' + [link("publicacao", "#publicacao", "Publicar anúncios"), link("precificacao", "#precificacao/ml", "Precificação"),
-      link("integracao", "#integracao", "Integração")].filter(Boolean).join("") + "</span></div>" +
-    '<div class="mkt breve" aria-disabled="true"><span>Nuvemshop</span><span class="mut">próxima integração — loja da Skyline</span></div></div>';
-}
-
-async function renderPrecificacao(sub) {
-  if (sub !== "ml") {
-    // Ante-tela: um card por marketplace (hoje só o Mercado Livre está integrado).
-    $("#conteudo").innerHTML = '<p class="mut" style="margin:0 0 12px">Escolha o marketplace para ver e alterar as réguas de preço.</p>' +
-      '<div class="marketplaces"><a class="mkt" href="#precificacao/ml"><img src="/logos/mercadolivre.webp" alt="Mercado Livre">' +
-      '<span>Réguas do Mercado Livre</span><span class="mut">Clássico e Premium</span></a>' +
-      '<div class="mkt breve" aria-disabled="true"><span>Outros marketplaces</span><span class="mut">entram aqui quando forem integrados</span></div></div>';
-    return;
-  }
+async function renderPrecificacao() {
+  // Precificação mora dentro do canal (menu Mercado Livre); a Nuvemshop terá a sua.
   const d = await api("/api/reguas");
   const r = d.reguas;
   const cartao = (tipo) =>
@@ -609,14 +690,14 @@ async function renderPrecificacao(sub) {
   const hist = (d.historico || []).map((h) => "<tr><td>" + esc(dt(h.em)) + "</td><td>" + esc(h.responsavel) + "</td><td>" +
     Object.keys(TIPOS).map((t) => esc(TIPOS[t]) + ": ×" + esc(h.reguas[t].fator) + " + " + brl(h.reguas[t].soma)).join("<br>") + "</td><td>" + esc(h.motivo || "") + "</td></tr>").join("");
   $("#conteudo").innerHTML =
-    '<p style="margin:0 0 10px"><a href="#canais">← Canais</a></p><div class="painel"><h3>Réguas vigentes — Mercado Livre</h3><p class="mut" style="margin:10px 12px 0">Preço no ML = preço de loja (tabela 0 do Sankhya) × multiplicador + acréscimo. ' +
+    '<div class="painel"><h3>Réguas vigentes</h3><p class="mut texto-painel">Preço no ML = preço de loja (tabela 0 do Sankhya) × multiplicador + acréscimo. ' +
     "Vale para os anúncios com saldo. Mudanças acima de 25% num anúncio não são aplicadas automaticamente. Depois de salvar, o ML é atualizado em até ~2 min (15 anúncios por rodada).</p>" +
     '<div class="reguas">' + Object.keys(TIPOS).map(cartao).join("") + "</div>" +
     '<div class="form-linha"><span class="mut">Fica registrado com o seu login (' + esc(eu ? eu.email : "") + ").</span>" +
-    '<label style="flex:1;min-width:220px">Motivo<input id="motivo" maxlength="200" placeholder="ex.: campanha, custo de frete"></label>' +
+    '<label class="motivo">Motivo<input id="motivo" maxlength="200" placeholder="ex.: campanha, custo de frete"></label>' +
     '<button type="button" id="simular">Simular impacto</button><button type="button" id="salvar" class="primario">Salvar régua</button></div>' +
-    '<div id="simulacao" style="padding:0 12px 12px"></div></div>' +
-    '<div class="painel" style="margin-top:14px"><h3>Histórico de alterações</h3><table><thead><tr><th>Quando</th><th>Quem</th><th>Régua</th><th>Motivo</th></tr></thead><tbody>' +
+    '<div id="simulacao"></div></div>' +
+    '<div class="painel"><h3>Histórico de alterações</h3><table><thead><tr><th>Quando</th><th>Quem</th><th>Régua</th><th>Motivo</th></tr></thead><tbody>' +
     (hist || '<tr><td colspan="4" class="mut">Nenhuma alteração ainda — vigente é a padrão (Clássico ×1,1236 + R$ 70).</td></tr>') + "</tbody></table></div>";
   const ler = () => {
     const out = {};
@@ -668,10 +749,10 @@ async function renderIntegracao(sub) {
       "<br>" + esc(s.skyhub.eventosPendentes) + " evento(s) na fila · " + esc(h.errosLog) + " erro(s) hoje</div></div>" +
     '<div class="ligacao">' + via("→", "Pedidos gravados hoje", h.pedidosGravados, "parceiro + pedido 1090") +
       via("←", "Leitura de estoque e preço", haQuanto(s.sankhya.ultimaLeitura), "tabela 0 e TGFEST") + "</div>" +
-    '<div class="no"><img src="/logos/sankhya.svg" alt="Sankhya"><div class="estado"><span class="ponto ' + saudeSk + '"></span>' + txt[saudeSk] + "</div>" +
+    '<div class="no"><img src="/logos/sankhya.svg" alt="Sankhya" class="logo-escuro"><div class="estado"><span class="ponto ' + saudeSk + '"></span>' + txt[saudeSk] + "</div>" +
       '<div class="det">última leitura ' + esc(haQuanto(s.sankhya.ultimaLeitura)) + (s.sankhya.ultimoErro ? '<br><span class="mut">último erro ' + esc(haQuanto(s.sankhya.ultimoErro.em)) + "</span>" : "") + "</div></div>" +
     "</div></div>" +
-    '<div class="painel" style="margin-top:14px"><h3>Modos de operação</h3><table><tbody>' +
+    '<div class="painel"><h3>Modos de operação</h3><table><tbody>' +
     [["Pedidos → Sankhya", s.modos.pedidos], ["XML da NF → ML", s.modos.xml], ["Cancelamento no Sankhya", s.modos.cancelamento], ["Estoque → ML", s.modos.estoque], ["Preço → ML", s.modos.preco]]
       .map(([n, m]) => "<tr><td>" + esc(n) + '</td><td><span class="tag ' + (m === "automatico" ? "ok" : m === "manual" ? "warn" : "") + '">' + esc(m) + "</span></td></tr>").join("") +
     "</tbody></table></div>";
@@ -712,9 +793,13 @@ async function renderNfs() {
 
 /* ------------------------------------------------------------------ eventos globais */
 document.addEventListener("click", async (ev) => {
+  const linhaProd = ev.target.closest("tr[data-sku]");
+  if (linhaProd && !ev.target.closest("a")) return abrirProduto(linhaProd.dataset.sku);
   const b = ev.target.closest("button, [data-ped]");
   if (!b) return;
   try {
+    if (b.dataset.filtroProd) { prod.filtro = b.dataset.filtroProd; prod.limite = 300; return desenharProdutos(); }
+    if (b.dataset.irPublicar) { pub.busca = b.dataset.irPublicar; pub.filtro = "todos"; $("#gaveta").hidden = true; location.hash = "#publicacao"; return; }
     if (b.id === "sair") { eu = null; $("#usuario").hidden = true; return skyAuth.sair(); }
     if (b.id === "trocar-senha") return skyAuth.trocarSenha();
     if (b.id === "fechar-gaveta") { $("#gaveta").hidden = true; return; }
@@ -732,14 +817,14 @@ document.addEventListener("click", async (ev) => {
       if (!confirm("Gravar este pedido no Sankhya? Cria o parceiro se for comprador novo, inclui e confirma o pedido 1090.")) return;
       b.disabled = true;
       const d = await post("/api/pedidos/" + b.dataset.order + "/gravar");
-      alert("Gravado: pedido " + (d.pedido.nunota ?? "?"));
+      avisar("Gravado no Sankhya: pedido " + (d.pedido.nunota ?? "?"));
       $("#gaveta").hidden = true; return navegar();
     }
     if (b.dataset.acao === "xml") {
       if (!confirm("Enviar ao Mercado Livre o XML da NF deste pedido? Isso libera a etiqueta.")) return;
       b.disabled = true;
       const d = await post("/api/nfs/" + b.dataset.chave + "/enviar");
-      alert("Resultado: " + d.status + (d.nf && d.nf.detalhe ? " — " + d.nf.detalhe : ""));
+      avisar("XML: " + d.status + (d.nf && d.nf.detalhe ? " — " + d.nf.detalhe : ""));
       $("#gaveta").hidden = true; return navegar();
     }
     if (b.dataset.acao === "reprocessar") {

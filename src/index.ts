@@ -2,6 +2,7 @@
 
 import { rotaAdmin } from "./admin.ts";
 import { moduloDaRota, MODULOS as MODULOS_TODOS, pode, type Modulo, type Quem, verificarJwt } from "./auth.ts";
+import { CANAIS, montarCatalogo } from "./catalogo.ts";
 import { checarBipe } from "./expedicao.ts";
 import { adicionarFamilia, atualizarCandidatos, auditarPublicacoes, casarPendentes, conferir, fila as filaPublicacao,
   importarFichas, processarFilaFichas, publicar } from "./publicacao.ts";
@@ -10,7 +11,7 @@ import { tokenStub } from "./meli.ts";
 import { cancelarNoErp, confirmarPedidoErp, gravarPedido, processarEvento, processarPedido } from "./processamento.ts";
 import { erpDaUltimaRodada, reguasVigentes, sincronizarEstoque } from "./estoque.ts";
 import { FASES, fase, type LinhaFluxo } from "./fluxo.ts";
-import { precoAlvo, REGUA_PRECO, LIMITES_REGUA, simularReguas, validarReguas, type AnuncioSync } from "./sync.ts";
+import { REGUA_PRECO, LIMITES_REGUA, simularReguas, validarReguas, type AnuncioSync } from "./sync.ts";
 import { atualizarEnviosPendentes, baixarEtiquetas } from "./etiquetas.ts";
 import { processarNf, varrerNfs } from "./nf.ts";
 import { storeStub } from "./store.ts";
@@ -199,15 +200,13 @@ async function rotaApi(req: Request, env: Env, url: URL): Promise<Response> {
 
   // Módulo Produtos ---------------------------------------------------------------
   if (req.method === "GET" && p === "/api/produtos") {
-    const [anuncios, erp, reguas, erpEm] = await Promise.all([
-      store.todosAnuncios(), erpDaUltimaRodada(env), reguasVigentes(env), store.meta("ultimo_erp_em"),
+    // Uma linha por SKU, com a situação em cada canal (catalogo.ts).
+    const [anuncios, erp, reguas, erpEm, pubErp] = await Promise.all([
+      store.todosAnuncios(), erpDaUltimaRodada(env), reguasVigentes(env), store.meta("ultimo_erp_em"), store.meta("pub_erp"),
     ]);
-    const produtos = anuncios.map((a) => {
-      const x = erp.get(String(a.sku));
-      const alvo = x && x.ativo ? precoAlvo(x.preco_loja, String(a.listing_type), reguas) : null;
-      return { ...a, disp: x ? Math.max(0, Math.floor(x.disp)) : null, ativo_erp: x ? x.ativo : null, preco_loja: x?.preco_loja ?? null, preco_alvo: alvo };
-    });
-    return json({ erpEm: erpEm ? Number(erpEm) : null, produtos });
+    const semAnuncio = pubErp ? (JSON.parse(pubErp) as { skus: Array<{ sku: string; produto: string; disp: number; preco_loja: number | null }> }).skus : [];
+    const produtos = montarCatalogo(anuncios as never, erp, semAnuncio, reguas);
+    return json({ erpEm: erpEm ? Number(erpEm) : null, canais: CANAIS, produtos });
   }
 
   // Módulo Precificação -----------------------------------------------------------

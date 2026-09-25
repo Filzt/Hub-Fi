@@ -7,57 +7,91 @@
 <link rel="stylesheet" href="/app.css">
 </head>
 <body>
+<!-- Ícones (traço 2px, 24x24) usados pelo menu e pelos botões: <svg class="ico"><use href="#i-..."/></svg> -->
+<svg xmlns="http://www.w3.org/2000/svg" hidden>
+  <symbol id="i-pedidos" viewBox="0 0 24 24"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2M12 11h4M12 16h4M8 11h.01M8 16h.01"/></symbol>
+  <symbol id="i-expedicao" viewBox="0 0 24 24"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2M15 18H9M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.62l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/></symbol>
+  <symbol id="i-produtos" viewBox="0 0 24 24"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16ZM3.3 7l8.7 5 8.7-5M12 22V12"/></symbol>
+  <symbol id="i-loja" viewBox="0 0 24 24"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4ZM3 6h18M16 10a4 4 0 0 1-8 0"/></symbol>
+  <symbol id="i-nuvem" viewBox="0 0 24 24"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></symbol>
+  <symbol id="i-integracoes" viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></symbol>
+  <symbol id="i-acessos" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/><circle cx="9" cy="7" r="4"/></symbol>
+  <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></symbol>
+  <symbol id="i-sair" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></symbol>
+  <symbol id="i-chave" viewBox="0 0 24 24"><circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6M15.5 7.5l3 3L22 7l-3-3"/></symbol>
+  <symbol id="i-fechar" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+</svg>
 <div class="app">
-  <aside class="lateral" aria-label="Módulos">
-    <div class="marca"><span class="logo-skyhub">SkyHub</span><span class="sub">Canais ↔ Sankhya</span></div>
-    <nav>
-      <a href="#pedidos" data-mod="pedidos">Pedidos</a>
-      <!-- Operação unificada (todos os canais numa fila): Pedidos e Expedição.
-           O que é de cada canal fica em Canais (decisão do Filipe, 25/09/2026). -->
-      <a href="#expedicao" data-mod="expedicao">Expedição</a>
-      <div class="submenu" id="sub-expedicao" data-grupo="expedicao">
-        <a href="#expedicao/agendados" data-rota="expedicao/agendados">Agendados <span class="qtd" data-qtd="agendados"></span></a>
-        <a href="#expedicao" data-rota="expedicao/imprimir">Para imprimir <span class="qtd" data-qtd="imprimir"></span></a>
-        <a href="#expedicao/impressos" data-rota="expedicao/impressos">Impressos <span class="qtd" data-qtd="impressos"></span></a>
-        <a href="#expedicao/despachados" data-rota="expedicao/despachados">Despachados <span class="qtd" data-qtd="despachados"></span></a>
+  <aside class="lateral" id="lateral" aria-label="Menu">
+    <div class="marca">
+      <span class="marca-simbolo" aria-hidden="true">S</span>
+      <span class="marca-txt"><span class="logo-skyhub">SkyHub</span><span class="sub">Canais ↔ Sankhya</span></span>
+      <button type="button" class="menu-mobile" id="abrir-menu" aria-label="Abrir menu" aria-expanded="false" aria-controls="nav-principal"><svg class="ico"><use href="#i-menu"/></svg></button>
+    </div>
+    <!-- Operação é unificada (todos os canais numa fila só); o que é de cada canal fica em
+         "Canais de venda"; Integrações e Acessos cuidam do sistema (Filipe, 25/09/2026). -->
+    <nav id="nav-principal">
+      <div class="nav-secao"><span class="secao">Operação</span>
+        <a href="#pedidos" data-mod="pedidos"><svg class="ico"><use href="#i-pedidos"/></svg><span>Pedidos</span></a>
+        <a href="#expedicao" data-mod="expedicao"><svg class="ico"><use href="#i-expedicao"/></svg><span>Expedição</span></a>
+        <div class="submenu" data-grupo="expedicao">
+          <a href="#expedicao/agendados" data-rota="expedicao/agendados">Agendados <span class="qtd" data-qtd="agendados"></span></a>
+          <a href="#expedicao" data-rota="expedicao/imprimir">Para imprimir <span class="qtd" data-qtd="imprimir"></span></a>
+          <a href="#expedicao/impressos" data-rota="expedicao/impressos">Impressos <span class="qtd" data-qtd="impressos"></span></a>
+          <a href="#expedicao/despachados" data-rota="expedicao/despachados">Despachados <span class="qtd" data-qtd="despachados"></span></a>
+        </div>
       </div>
-      <a href="#produtos" data-mod="produtos">Produtos</a>
-      <a href="#canais" data-mod="canais">Canais</a>
-      <div class="submenu" id="sub-canais" data-grupo="canais">
-        <span class="grupo-canal">Mercado Livre</span>
-        <a href="#publicacao" data-rota="publicacao/fila" data-perm="publicacao">Publicar anúncios</a>
-        <a href="#publicacao/historico" data-rota="publicacao/historico" data-perm="publicacao" class="nivel2">Histórico de publicação</a>
-        <a href="#precificacao/ml" data-rota="precificacao/ml" data-perm="precificacao">Precificação</a>
-        <a href="#integracao" data-rota="integracao/visao" data-perm="integracao">Integração</a>
-        <a href="#integracao/nfs" data-rota="integracao/nfs" data-perm="integracao" class="nivel2">NF-e → ML</a>
-        <a href="#integracao/logs" data-rota="integracao/logs" data-perm="integracao" class="nivel2">Logs</a>
-        <a href="#integracao/eventos" data-rota="integracao/eventos" data-perm="integracao" class="nivel2">Eventos</a>
-        <span class="grupo-canal breve">Nuvemshop <em>em breve</em></span>
+      <div class="nav-secao"><span class="secao">Catálogo</span>
+        <a href="#produtos" data-mod="produtos"><svg class="ico"><use href="#i-produtos"/></svg><span>Produtos</span></a>
       </div>
-      <a href="#admin/usuarios" data-mod="admin" hidden>Administração</a>
-      <div class="submenu" id="sub-admin" data-grupo="admin">
-        <a href="#admin/usuarios" data-rota="admin/usuarios">Usuários</a>
-        <a href="#admin/funcoes" data-rota="admin/funcoes">Funções</a>
+      <div class="nav-secao"><span class="secao">Canais de venda</span>
+        <a href="#publicacao" data-mod="ml"><svg class="ico"><use href="#i-loja"/></svg><span>Mercado Livre</span></a>
+        <div class="submenu" data-grupo="ml">
+          <a href="#publicacao" data-rota="publicacao/fila" data-perm="publicacao">Publicar anúncios</a>
+          <a href="#publicacao/historico" data-rota="publicacao/historico" data-perm="publicacao">Histórico de publicação</a>
+          <a href="#precificacao" data-rota="precificacao/ml" data-perm="precificacao">Precificação</a>
+        </div>
+        <span class="nav-breve" data-mod-breve="ml" title="Próxima integração: loja da Skyline"><svg class="ico"><use href="#i-nuvem"/></svg><span>Nuvemshop</span><em>em breve</em></span>
+      </div>
+      <div class="nav-secao"><span class="secao">Sistema</span>
+        <a href="#integracao" data-mod="integracao"><svg class="ico"><use href="#i-integracoes"/></svg><span>Integrações</span></a>
+        <div class="submenu" data-grupo="integracao">
+          <a href="#integracao" data-rota="integracao/visao">Visão geral</a>
+          <a href="#integracao/nfs" data-rota="integracao/nfs">NF-e → ML</a>
+          <a href="#integracao/logs" data-rota="integracao/logs">Logs</a>
+          <a href="#integracao/eventos" data-rota="integracao/eventos">Eventos</a>
+        </div>
+        <a href="#admin/usuarios" data-mod="admin" hidden><svg class="ico"><use href="#i-acessos"/></svg><span>Acessos</span></a>
+        <div class="submenu" data-grupo="admin">
+          <a href="#admin/usuarios" data-rota="admin/usuarios">Usuários</a>
+          <a href="#admin/funcoes" data-rota="admin/funcoes">Funções</a>
+        </div>
       </div>
     </nav>
     <div class="usuario" id="usuario" hidden>
-      <div class="usuario-nome" id="usuario-nome"></div>
-      <div class="usuario-funcao" id="usuario-funcao"></div>
-      <div class="usuario-acoes"><button type="button" id="trocar-senha">Trocar senha</button><button type="button" id="sair">Sair</button></div>
+      <span class="avatar" id="usuario-avatar" aria-hidden="true"></span>
+      <span class="usuario-txt"><span class="usuario-nome" id="usuario-nome"></span><span class="usuario-funcao" id="usuario-funcao"></span></span>
+      <span class="usuario-acoes">
+        <button type="button" id="trocar-senha" class="icone-lat" title="Trocar senha" aria-label="Trocar senha"><svg class="ico"><use href="#i-chave"/></svg></button>
+        <button type="button" id="sair" class="icone-lat" title="Sair" aria-label="Sair"><svg class="ico"><use href="#i-sair"/></svg></button>
+      </span>
     </div>
   </aside>
   <main>
     <header class="topo">
-      <h1 id="titulo">SkyHub</h1>
-      <div id="modos" class="modos"></div>
+      <div class="topo-txt">
+        <p class="kicker" id="kicker" hidden></p>
+        <h1 id="titulo">SkyHub</h1>
+        <p class="desc" id="desc"></p>
+      </div>
     </header>
-    <div id="msg" role="alert"></div>
+    <div id="msg" class="msg-erro" role="alert" hidden><span id="msg-txt"></span><button type="button" id="fechar-msg" class="fechar-msg" aria-label="Fechar aviso"><svg class="ico"><use href="#i-fechar"/></svg></button></div>
     <section id="conteudo"></section>
   </main>
 </div>
 <div id="gaveta" class="gaveta" hidden>
   <div class="gaveta-caixa" role="dialog" aria-modal="true" aria-labelledby="gaveta-titulo">
-    <div class="gaveta-topo"><h2 id="gaveta-titulo"></h2><button type="button" id="fechar-gaveta" aria-label="Fechar">✕</button></div>
+    <div class="gaveta-topo"><h2 id="gaveta-titulo"></h2><button type="button" id="fechar-gaveta" class="fechar" aria-label="Fechar"><svg class="ico"><use href="#i-fechar"/></svg></button></div>
     <div id="gaveta-corpo"></div>
   </div>
 </div>
@@ -74,7 +108,7 @@
 <div id="aviso" class="aviso" role="status" hidden></div>
 <div id="tela-login" class="tela-login">
   <div class="login-caixa">
-    <div class="login-marca"><span class="logo-skyhub">SkyHub</span><span class="sub">ML ↔ Sankhya</span></div>
+    <div class="login-marca"><span class="marca-simbolo" aria-hidden="true">S</span><span class="logo-skyhub">SkyHub</span><span class="sub">Canais ↔ Sankhya</span></div>
     <form id="form-entrar" autocomplete="on">
       <h1>Entrar</h1>
       <label for="login-email">E-mail</label>

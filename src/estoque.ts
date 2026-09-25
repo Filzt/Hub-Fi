@@ -93,8 +93,8 @@ export async function erpDaUltimaRodada(env: Env): Promise<Map<string, ErpSku>> 
   const bruto = await storeStub(env).meta("ultimo_erp");
   const mapa = new Map<string, ErpSku>();
   if (!bruto) return mapa;
-  for (const [sku, [disp, ativo, preco]] of Object.entries(JSON.parse(bruto) as Record<string, [number, number, number | null]>)) {
-    mapa.set(sku, { disp, ativo: ativo === 1, preco_loja: preco });
+  for (const [sku, [disp, ativo, preco, produto]] of Object.entries(JSON.parse(bruto) as Record<string, [number, number, number | null, string?]>)) {
+    mapa.set(sku, { disp, ativo: ativo === 1, preco_loja: preco, produto: produto ?? null });
   }
   return mapa;
 }
@@ -107,7 +107,7 @@ export async function lerErp(env: Env, skus: string[]): Promise<{ mapa: Map<stri
     const lista = validos.slice(i, i + 900).map(sqlTexto).join(",");
     const linhas = await consultar(
       env,
-      `SELECT P.REFERENCIA, P.ATIVO, NVL(E.DISP, 0) DISP, PR.VLRVENDA
+      `SELECT P.REFERENCIA, P.ATIVO, P.DESCRPROD, NVL(E.DISP, 0) DISP, PR.VLRVENDA
        FROM TGFPRO P
        LEFT JOIN (SELECT CODPROD, SUM(ESTOQUE - RESERVADO) DISP FROM TGFEST
                   WHERE CODEMP = 1 AND CODLOCAL IN (${LOCAIS_ESTOQUE.join(",")}) GROUP BY CODPROD) E ON E.CODPROD = P.CODPROD
@@ -125,6 +125,7 @@ export async function lerErp(env: Env, skus: string[]): Promise<{ mapa: Map<stri
         disp: Number(l.DISP ?? 0),
         ativo: l.ATIVO === "S",
         preco_loja: l.VLRVENDA == null ? null : Number(l.VLRVENDA),
+        produto: l.DESCRPROD == null ? null : String(l.DESCRPROD).trim(),
       });
     }
   }
@@ -156,7 +157,7 @@ export async function sincronizarEstoque(env: Env, opts: { forcarCatalogo?: bool
   const skus = [...new Set(anuncios.map((a) => a.sku).filter(Boolean))];
   const { mapa, duplicados } = await lerErp(env, skus);
   // 1 gravação por rodada (em vez de 1 por SKU) — alimenta Produtos e a simulação de régua.
-  await store.setMeta("ultimo_erp", JSON.stringify(Object.fromEntries([...mapa].map(([k, v]) => [k, [v.disp, v.ativo ? 1 : 0, v.preco_loja]]))));
+  await store.setMeta("ultimo_erp", JSON.stringify(Object.fromEntries([...mapa].map(([k, v]) => [k, [v.disp, v.ativo ? 1 : 0, v.preco_loja, v.produto ?? null]]))));
   await store.setMeta("ultimo_erp_em", String(Date.now()));
   const reguas = await reguasVigentes(env);
   const plano = planejar(anuncios, mapa, reguas);

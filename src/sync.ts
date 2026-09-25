@@ -35,6 +35,7 @@ export interface ErpSku {
   disp: number;
   ativo: boolean;
   preco_loja: number | null;
+  produto?: string | null; // DESCRPROD, só para a tela de Produtos
 }
 
 export interface Acao {
