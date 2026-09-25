@@ -66,7 +66,7 @@ export async function checarBipe(env: Env, bruto: string): Promise<Checagem> {
   } else if (codigo.length >= 15) {
     pedido = codigo;
   } else {
-    shipment = await talvez(meliGet<Shipment>(env, `/shipments/${codigo}`, { "x-format-new": "true" }));
+    shipment = await talvez(meliGet<Shipment>(env, `/shipments/${codigo}`));
     if (shipment) pedido = shipment.pack_id ? String(shipment.pack_id) : shipment.order_id ? String(shipment.order_id) : null;
   }
   if (!pedido && !shipment) return r;
@@ -79,10 +79,10 @@ export async function checarBipe(env: Env, bruto: string): Promise<Checagem> {
     if (pack) {
       orderIds = (pack.orders ?? []).map((o) => String(o.id));
       pedido = String(pack.id);
-      if (!shipment && pack.shipment?.id) shipment = await talvez(meliGet<Shipment>(env, `/shipments/${pack.shipment.id}`, { "x-format-new": "true" }));
+      if (!shipment && pack.shipment?.id) shipment = await talvez(meliGet<Shipment>(env, `/shipments/${pack.shipment.id}`));
     } else if (order) {
       orderIds = [String(order.id)];
-      if (!shipment && order.shipping?.id) shipment = await talvez(meliGet<Shipment>(env, `/shipments/${order.shipping.id}`, { "x-format-new": "true" }));
+      if (!shipment && order.shipping?.id) shipment = await talvez(meliGet<Shipment>(env, `/shipments/${order.shipping.id}`));
     }
   }
   for (const id of orderIds) {
