@@ -17,10 +17,19 @@ export const CABECALHO_FIXO = {
 } as const;
 
 export const ITEM_FIXO = {
-  CODLOCALORIG: "0",
+  // Em 24/09/2026 20:37 o Sankhya passou a controlar estoque por local
+  // (TSIPAR UTILIZALOCAL N→S) e recusa o local 0 "<SEM LOCAL>" no pedido.
+  // Local definido pelo Filipe em 25/09/2026: 10100000 (GERAL).
+  CODLOCALORIG: "10100000",
   CODVOL: "UN",
   PERCDESC: "0",
 } as const;
+
+// Locais somados na leitura de estoque. O saldo físico ainda está no 0 e as vendas
+// novas saem do 10100000 (que por isso fica negativo até a transferência): a soma
+// dos dois é o disponível real. Quando o estoque for todo para o 10100000, o 0 zera
+// e a soma continua certa.
+export const LOCAIS_ESTOQUE = [0, 10100000] as const;
 
 // Retry de eventos: backoff exponencial com jitter, teto de 6 h, 8 tentativas.
 export const RETRY = {

@@ -2,7 +2,7 @@
 // (testadas em test/nota.test.ts); quem lê e escreve é estoque.ts.
 //
 // Regras (decididas com o Filipe em 24/09/2026):
-//   quantidade = ESTOQUE − RESERVADO no Sankhya (empresa 1, local 0), por SKU do
+//   quantidade = ESTOQUE − RESERVADO no Sankhya (empresa 1, locais 0 + 10100000), por SKU do
 //                anúncio; negativo ou produto inativo = 0;
 //   preço      = preço de loja (tabela 0, vigência mais recente) × 1,1236 + 70 no
 //                Clássico — a régua que já estava no ar (a da Base);

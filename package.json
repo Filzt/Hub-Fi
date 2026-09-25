@@ -14,5 +14,8 @@
   "devDependencies": {
     "typescript": "^5.9.3",
     "wrangler": "^4.139.0"
+  },
+  "dependencies": {
+    "pdf-lib": "^1.17.1"
   }
 }

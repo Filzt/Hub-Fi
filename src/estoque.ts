@@ -8,6 +8,7 @@
 //   - no máximo MAX_PUTS alterações por rodada; o resto fica para a próxima.
 // Modos: ESTOQUE_MODO / PRECO_MODO = sombra (só planeja) | automatico (aplica).
 
+import { LOCAIS_ESTOQUE } from "./config.ts";
 import { meliEnviar, meliGet } from "./meli.ts";
 import { sqlTexto } from "./nota.ts";
 import { consultar } from "./sankhya.ts";
@@ -107,7 +108,7 @@ export async function lerErp(env: Env, skus: string[]): Promise<{ mapa: Map<stri
       `SELECT P.REFERENCIA, P.ATIVO, NVL(E.DISP, 0) DISP, PR.VLRVENDA
        FROM TGFPRO P
        LEFT JOIN (SELECT CODPROD, SUM(ESTOQUE - RESERVADO) DISP FROM TGFEST
-                  WHERE CODEMP = 1 AND CODLOCAL = 0 GROUP BY CODPROD) E ON E.CODPROD = P.CODPROD
+                  WHERE CODEMP = 1 AND CODLOCAL IN (${LOCAIS_ESTOQUE.join(",")}) GROUP BY CODPROD) E ON E.CODPROD = P.CODPROD
        LEFT JOIN (SELECT CODPROD, VLRVENDA FROM (
                     SELECT X.CODPROD, X.VLRVENDA,
                            ROW_NUMBER() OVER (PARTITION BY X.CODPROD ORDER BY T.DTVIGOR DESC, T.NUTAB DESC) RN

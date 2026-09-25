@@ -9,6 +9,7 @@
 // Baixar a etiqueta costuma marcar o envio como "printed" no ML.
 
 import { meliBaixar, meliGet } from "./meli.ts";
+import { juntarEtiquetas } from "./recorte.ts";
 import { storeStub } from "./store.ts";
 import { type Env, ErroDefinitivo } from "./tipos.ts";
 
@@ -41,22 +42,47 @@ export async function atualizarEnviosPendentes(env: Env, limite = 20): Promise<n
   return ids.length;
 }
 
-/** Baixa as etiquetas (PDF ou ZPL) de até 50 envios de uma vez. */
+// PDF: um envio por chamada ao ML, para cada etiqueta vir sozinha na página e o
+// recorte 10x15 (recorte.ts) valer. Teto de 20 por impressão para ficar longe do
+// limite de subrequests do Worker. ZPL já sai no tamanho da etiqueta e vai em lote.
+const MAX_PDF = 20;
+
+/** Baixa as etiquetas: PDF recortado em 10x15 (até 20) ou ZPL (até 50). */
 export async function baixarEtiquetas(env: Env, ids: string[], formato: "pdf" | "zpl2"): Promise<Response> {
   const limpos = [...new Set(ids.map((x) => x.trim()).filter((x) => /^\d{6,20}$/.test(x)))];
   if (!limpos.length) throw new ErroDefinitivo("nenhum envio válido");
-  if (limpos.length > 50) throw new ErroDefinitivo("máximo de 50 envios por impressão (limite do ML)");
-  const r = await meliBaixar(env, `/shipment_labels?shipment_ids=${limpos.join(",")}&response_type=${formato}`);
-  if (r.status !== 200) {
-    throw new ErroDefinitivo(`ML recusou as etiquetas (HTTP ${r.status}): ${new TextDecoder().decode(r.corpo).slice(0, 300)}`);
-  }
+  if (formato === "zpl2" && limpos.length > 50) throw new ErroDefinitivo("máximo de 50 envios por impressão (limite do ML)");
+  if (formato === "pdf" && limpos.length > MAX_PDF) throw new ErroDefinitivo(`máximo de ${MAX_PDF} etiquetas em PDF por impressão`);
+
+  const baixar = async (lista: string[]) => {
+    const r = await meliBaixar(env, `/shipment_labels?shipment_ids=${lista.join(",")}&response_type=${formato}`);
+    if (r.status !== 200) {
+      throw new ErroDefinitivo(`ML recusou a etiqueta ${lista.join(",")} (HTTP ${r.status}): ${new TextDecoder().decode(r.corpo).slice(0, 300)}`);
+    }
+    return r;
+  };
+
   const store = storeStub(env);
+  let corpo: Uint8Array;
+  let tipo: string;
+  if (formato === "pdf") {
+    const pdfs: Uint8Array[] = [];
+    for (const id of limpos) pdfs.push(new Uint8Array((await baixar([id])).corpo));
+    const { pdf, foraDoPadrao } = await juntarEtiquetas(pdfs);
+    if (foraDoPadrao) await store.log("aviso", null, `${foraDoPadrao} etiqueta(s) fora do layout A4 esperado — saíram sem recorte`);
+    corpo = pdf;
+    tipo = "application/pdf";
+  } else {
+    const r = await baixar(limpos);
+    corpo = new Uint8Array(r.corpo);
+    tipo = r.contentType || "text/plain";
+  }
   await store.marcarImpressos(limpos);
   await store.log("info", null, `etiquetas baixadas (${formato}): ${limpos.join(", ")}`);
   const ext = formato === "pdf" ? "pdf" : "zpl";
-  return new Response(r.corpo, {
+  return new Response(corpo, {
     headers: {
-      "Content-Type": r.contentType || (formato === "pdf" ? "application/pdf" : "text/plain"),
+      "Content-Type": tipo,
       "Content-Disposition": `attachment; filename="etiquetas-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, "")}.${ext}"`,
       "Cache-Control": "no-store",
     },

@@ -160,7 +160,7 @@ async function abrirPedido(chave) {
 
 async function imprimirEtiquetas(ids) {
   const lista = ids.split(",").filter(Boolean);
-  if (lista.length > 50) throw new Error("Máximo de 50 etiquetas por vez.");
+  if (lista.length > 20) throw new Error("Máximo de 20 etiquetas por vez.");
   if (!confirm("Baixar " + lista.length + " etiqueta(s) 10x15? O ML marca os envios como impressos.")) return;
   const r = await fetch("/api/etiquetas/baixar?formato=pdf&ids=" + lista.join(","), { headers: { Authorization: "Bearer " + token } });
   if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.erro || "Falha HTTP " + r.status); }
