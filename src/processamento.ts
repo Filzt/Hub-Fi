@@ -476,11 +476,24 @@ async function resolverEndereco(env: Env, billing: BillingML | null, alertas: st
     env,
     `SELECT C.CODCID FROM TSICID C JOIN TSIUFS U ON U.CODUF = C.UF WHERE U.UF = ${sqlTexto(uf)} AND ${semAcento("C.NOMECID", cidade)}`,
   );
-  if (cids.length !== 1) {
-    alertas.push(`cidade "${cidade}/${uf}" ${cids.length ? "ambígua" : "não encontrada"} na TSICID`);
+  let codcid = cids.length === 1 ? Number(cids[0].CODCID) : null;
+  if (codcid == null && cepDig.length === 8) {
+    // O ML às vezes manda o DISTRITO no lugar do município (25/09/2026: "Tauari/PA",
+    // CEP 68705-000, distrito de Capanema pelo IBGE). O ViaCEP devolve o município e o
+    // código IBGE, que o Sankhya guarda em TSICID.CODMUNFIS.
+    const mun = await municipioPeloCep(cepDig);
+    if (mun && mun.uf === uf) {
+      const porIbge = await consultar(env, `SELECT CODCID FROM TSICID WHERE CODMUNFIS = ${mun.ibge}`);
+      if (porIbge.length === 1) {
+        codcid = Number(porIbge[0].CODCID);
+        alertas.push(`"${cidade}" não é município no Sankhya: usado ${mun.localidade}/${uf} pelo CEP (ViaCEP, IBGE ${mun.ibge})`);
+      }
+    }
+  }
+  if (codcid == null) {
+    alertas.push(`cidade "${cidade}/${uf}" ${cids.length > 1 ? "ambígua" : "não encontrada"} na TSICID`);
     return null;
   }
-  const codcid = Number(cids[0].CODCID);
 
   const bairro = textoLimpo(a?.neighborhood);
   let codbai = BAIRRO_OUTRO;
@@ -506,6 +519,23 @@ async function resolverEndereco(env: Env, billing: BillingML | null, alertas: st
   if (escolhida) return { CODEND: Number(escolhida.CODEND), CODBAI: codbai, CODCID: codcid };
   alertas.push(`rua "${nome}" não existe na TSIEND — será criada na gravação`);
   return { CODEND: null, CODBAI: codbai, CODCID: codcid, enderecoNovo: { NOMEEND: nome.toUpperCase(), TIPO: tipo } };
+}
+
+/**
+ * Município do CEP pelo ViaCEP (público, sem chave). Só é chamado quando o nome da cidade
+ * não bate com a TSICID. Falha de rede ou CEP inexistente = null (o pedido fica bloqueado,
+ * como antes). Só o CEP sai daqui — nenhum dado do comprador.
+ */
+async function municipioPeloCep(cep: string): Promise<{ ibge: number; localidade: string; uf: string } | null> {
+  try {
+    const r = await fetch(`https://viacep.com.br/ws/${cep}/json/`, { signal: AbortSignal.timeout(6000) });
+    if (!r.ok) return null;
+    const d = (await r.json()) as { erro?: boolean | string; ibge?: string; localidade?: string; uf?: string };
+    if (d.erro || !/^\d{7}$/.test(String(d.ibge ?? ""))) return null;
+    return { ibge: Number(d.ibge), localidade: String(d.localidade ?? ""), uf: String(d.uf ?? "").toUpperCase() };
+  } catch {
+    return null;
+  }
 }
 
 /** Acha ou cria o logradouro (trava por nome evita duplicata entre pedidos simultâneos). */
