@@ -482,7 +482,9 @@ async function resolverEndereco(env: Env, billing: BillingML | null, alertas: st
     // CEP 68705-000, distrito de Capanema pelo IBGE). O ViaCEP devolve o município e o
     // código IBGE, que o Sankhya guarda em TSICID.CODMUNFIS.
     const mun = await municipioPeloCep(cepDig);
-    if (mun && mun.uf === uf) {
+    if (typeof mun === "string") alertas.push(`ViaCEP: ${mun}`);
+    else if (mun.uf !== uf) alertas.push(`ViaCEP: CEP ${cepDig} é de ${mun.localidade}/${mun.uf}, mas o ML diz ${uf}`);
+    else {
       const porIbge = await consultar(env, `SELECT CODCID FROM TSICID WHERE CODMUNFIS = ${mun.ibge}`);
       if (porIbge.length === 1) {
         codcid = Number(porIbge[0].CODCID);
@@ -523,18 +525,22 @@ async function resolverEndereco(env: Env, billing: BillingML | null, alertas: st
 
 /**
  * Município do CEP pelo ViaCEP (público, sem chave). Só é chamado quando o nome da cidade
- * não bate com a TSICID. Falha de rede ou CEP inexistente = null (o pedido fica bloqueado,
- * como antes). Só o CEP sai daqui — nenhum dado do comprador.
+ * não bate com a TSICID. Falha devolve o motivo em texto (o pedido fica bloqueado, como
+ * antes, e o motivo aparece nos alertas). Só o CEP sai daqui — nenhum dado do comprador.
  */
-async function municipioPeloCep(cep: string): Promise<{ ibge: number; localidade: string; uf: string } | null> {
+async function municipioPeloCep(cep: string): Promise<{ ibge: number; localidade: string; uf: string } | string> {
   try {
-    const r = await fetch(`https://viacep.com.br/ws/${cep}/json/`, { signal: AbortSignal.timeout(6000) });
-    if (!r.ok) return null;
+    const r = await fetch(`https://viacep.com.br/ws/${cep}/json/`, {
+      headers: { accept: "application/json", "user-agent": "skyhub (Skyline)" },
+      signal: AbortSignal.timeout(6000),
+    });
+    if (!r.ok) return `HTTP ${r.status}`;
     const d = (await r.json()) as { erro?: boolean | string; ibge?: string; localidade?: string; uf?: string };
-    if (d.erro || !/^\d{7}$/.test(String(d.ibge ?? ""))) return null;
+    if (d.erro) return `CEP ${cep} inexistente`;
+    if (!/^\d{7}$/.test(String(d.ibge ?? ""))) return "resposta sem código IBGE";
     return { ibge: Number(d.ibge), localidade: String(d.localidade ?? ""), uf: String(d.uf ?? "").toUpperCase() };
-  } catch {
-    return null;
+  } catch (e) {
+    return `falha de rede (${(e as Error).message})`;
   }
 }
 
