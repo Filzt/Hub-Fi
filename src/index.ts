@@ -181,10 +181,10 @@ async function rotaApi(req: Request, env: Env, url: URL): Promise<Response> {
 
   // Etiquetas ---------------------------------------------------------------------
   if (req.method === "GET" && p === "/api/etiquetas") {
-    if (url.searchParams.get("fase") === "despachados") return json({ etiquetas: await store.listarDespachados() });
+    if (url.searchParams.get("fase") === "despachados") return json({ etiquetas: await store.listarDespachados(inicioDoDiaSp()) });
     return json({ etiquetas: await store.listarEtiquetas() });
   }
-  if (req.method === "GET" && p === "/api/expedicao/contagem") return json(await store.contagemExpedicao());
+  if (req.method === "GET" && p === "/api/expedicao/contagem") return json(await store.contagemExpedicao(inicioDoDiaSp()));
   // Expedição: cada bipe confere no ML, ao vivo, se a venda foi cancelada.
   if (req.method === "GET" && p === "/api/expedicao/checar") {
     return json(await checarBipe(env, String(url.searchParams.get("codigo") ?? "").slice(0, 200)));
@@ -264,6 +264,11 @@ async function rotaApi(req: Request, env: Env, url: URL): Promise<Response> {
     return json({ access_token: await tokenStub(env).accessToken() });
   }
   return json({ erro: "rota não encontrada" }, 404);
+}
+
+/** Meia-noite de hoje em São Paulo (UTC−3, sem horário de verão desde 2019), em ms. */
+function inicioDoDiaSp(agora = Date.now()): number {
+  return agora - ((agora - 3 * 3_600_000) % 86_400_000);
 }
 
 export default {

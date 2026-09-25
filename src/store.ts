@@ -227,8 +227,8 @@ export class Store extends DurableObject<Env> {
     );
   }
 
-  /** Envios despachados nos últimos `dias` (fase 3 da Expedição), mais recentes primeiro. */
-  listarDespachados(dias = 7) {
+  /** Envios despachados desde `desde` (fase 3 da Expedição: o dia de hoje), mais recentes primeiro. */
+  listarDespachados(desde: number) {
     return this.sql
       .exec(
         `SELECT e.shipment_id, COALESCE(n.chave, e.chave) chave, e.chave envio_order, p.data_ml, e.status, e.substatus, e.logistica,
@@ -238,13 +238,13 @@ export class Store extends DurableObject<Env> {
          LEFT JOIN pedidos p ON p.chave = COALESCE(n.chave, e.chave)
          WHERE e.despachado_em >= ?
          ORDER BY e.despachado_em DESC LIMIT 300`,
-        Date.now() - dias * 86_400_000,
+        desde,
       )
       .toArray();
   }
 
   /** Quantidade por fase da Expedição (números dos submenus). */
-  contagemExpedicao(dias = 7): { imprimir: number; impressos: number; despachados: number } {
+  contagemExpedicao(desdeDespacho: number): { imprimir: number; impressos: number; despachados: number } {
     const r = this.sql
       .exec<{ imprimir: number; impressos: number; despachados: number }>(
         `SELECT
@@ -252,7 +252,7 @@ export class Store extends DurableObject<Env> {
            SUM(CASE WHEN status = 'ready_to_ship' AND substatus = 'printed' THEN 1 ELSE 0 END) impressos,
            SUM(CASE WHEN despachado_em >= ? THEN 1 ELSE 0 END) despachados
          FROM envios`,
-        Date.now() - dias * 86_400_000,
+        desdeDespacho,
       )
       .one();
     return { imprimir: r.imprimir ?? 0, impressos: r.impressos ?? 0, despachados: r.despachados ?? 0 };

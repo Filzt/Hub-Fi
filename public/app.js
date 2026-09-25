@@ -266,7 +266,7 @@ async function renderExpedicao(sub) {
     '<span class="dica">Aceita nº do pedido do ML, nº do envio, chave ou número da NF. O 1º bipe localiza; bipar de novo (ou Enter) imprime.</span></div>' +
     '<div id="resultado-bipe"></div>' +
     '<div class="cards"><div class="card"><b>' + prontas + '</b><span>Para imprimir</span></div><div class="card"><b>' + (d.etiquetas.length - prontas) + '</b><span>Impressas, aguardando despacho</span></div></div>' +
-    (expedicao.fase === "despachados" ? '<p class="dica">Despachados nos últimos 7 dias: o ML registrou a entrada do pacote na agência ou coleta.</p>' : "") +
+    (expedicao.fase === "despachados" ? '<p class="dica">Despachados hoje: o ML registrou a entrada do pacote na agência ou coleta.</p>' : "") +
     '<div class="acoes-sel"' + (expedicao.fase === "despachados" ? " hidden" : "") + '><button type="button" class="primario" id="imprimir-sel" disabled>Imprimir selecionadas</button><span class="dica" id="info-sel"></span></div>' +
     '<div class="painel"><table><thead><tr><th class="sel">' + (expedicao.fase === "despachados" ? "" : '<input type="checkbox" id="sel-todas" aria-label="Selecionar todas as visíveis">') + '</th><th>Pedido ML</th><th>NF</th><th>Envio</th><th>Venda</th><th class="n">Total</th><th>Situação</th><th></th></tr></thead><tbody id="tb-exp"></tbody></table></div>';
   // Seleção que ficou de uma lista anterior só vale para envios ainda liberados.
@@ -354,7 +354,7 @@ function desenharDespachados() {
   $("#tb-exp").innerHTML = expedicao.despachados.map((e) => "<tr><td></td><td><b>" + esc(e.chave || "—") + "</b></td><td>" + esc(nfDaChave(e.fiscal_key) || "—") +
     "</td><td>" + esc(e.shipment_id) + "</td><td>" + esc(dtIso(e.data_ml)) + '</td><td class="n">' + brl(e.total) + "</td><td>" +
     '<span class="tag ok">despachado ' + esc(dt(e.despachado_em)) + '</span> <span class="mut">' + esc([e.status, e.substatus].filter(Boolean).join(" / ")) + "</span></td><td></td></tr>").join("") ||
-    '<tr><td colspan="8" class="mut">Nenhum envio despachado nos últimos 7 dias.</td></tr>';
+    '<tr><td colspan="8" class="mut">Nenhum envio despachado hoje.</td></tr>';
 }
 
 function atualizarSelecao() {
