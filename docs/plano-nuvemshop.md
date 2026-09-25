@@ -17,6 +17,21 @@ aparecendo nas mesmas telas de Pedidos, Expedição e Produtos, com o selo do ca
 | 5 | **NF do site** | Continua a 1130 manual? A Nuvemshop não recebe o XML (ver §2) e só guarda um link público para ele. |
 | 6 | **Dia do corte** | A equipe para de digitar o pedido do site no mesmo dia em que o SkyHub começa a gravar. |
 
+## 1.1 O que o Sankhya já tem para venda online
+
+Levantado em 25/09/2026, só leitura. Proposta para a decisão 1:
+
+| Campo | Proposta | Por quê |
+|---|---|---|
+| TOP do pedido | **1001** "PEDIDO DE VENDA ONLINE" | Já existe e é usada à mão para venda online: 17 notas em 180 dias. |
+| TOP do faturamento | **1128** "VENDA - NF-E VENDAS ONLINE" | É o par da 1001, como a 1130 é da 1090 no ML. |
+| Centro de custo | **130800** "VENDAS ONLINE" | O ML usa 130300 "VENDAS MERCADO LIVRE". |
+| Natureza | **1090000** "RECEITA DE VENDAS ONLINE" | O ML usa 1040000. |
+| Vendedor | **A definir** | O ML tem o vendedor 9 "MERCADO LIVRE"; não há um "NUVEMSHOP"/"SITE". Criar um, ou usar 0. |
+| Transportadora | **A definir** pelo frete da loja | A 1128 já saiu com 252 CORREIOS e 144 TECH ENVIOS. |
+
+A venda de balcão da loja física usa a 1191/1009, com o vendedor 3 e o CC 130200. **Não é** o site.
+
 ## 2. Fatos da documentação oficial
 
 Fonte: API 2025-03, tiendanube.github.io/api-documentation, lida direto em 25/09/2026.
