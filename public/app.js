@@ -11,6 +11,8 @@ const brl = (v) => (v == null || v === "" ? "—" : Number(v).toLocaleString("pt
 const dt = (ms) => (ms ? new Date(ms).toLocaleString("pt-BR") : "—");
 const dtIso = (iso) => (iso ? new Date(iso).toLocaleString("pt-BR") : "—");
 const hora = (ms) => (ms ? new Date(ms).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "—");
+// Todo texto visível começa com maiúscula (regra do Filipe, 25/09/2026). Use em valor que vem da API.
+const cap = (v) => { const s = String(v ?? ""); return s.charAt(0).toLocaleUpperCase("pt-BR") + s.slice(1); };
 const nfDaChave = (k) => (k && k.length === 44 ? String(Number(k.slice(25, 34))) : null);
 const haQuanto = (ms) => {
   if (!ms) return "nunca";
@@ -72,7 +74,7 @@ async function entrarNoPainel() {
 /** Aviso curto de sucesso (some sozinho). */
 function avisar(texto) {
   const a = $("#aviso");
-  a.textContent = texto;
+  a.textContent = cap(texto);
   a.hidden = false;
   clearTimeout(avisar.t);
   avisar.t = setTimeout(() => { a.hidden = true; }, 3500);
@@ -85,10 +87,10 @@ const post = (caminho, corpo) => api(caminho, { method: "POST", body: corpo ? JS
 const AUTO_MS = 60_000;
 const btnAtualizar = (id, titulo) =>
   '<button id="' + id + '" type="button" class="icone" title="' + esc(titulo) + '" aria-label="' + esc(titulo) + '">↻</button>' +
-  '<span class="atualizado mut" data-atualizado>atualizado ' + esc(hora(Date.now())) + "</span>";
-const marcarAtualizado = () => $$("[data-atualizado]").forEach((el) => { el.textContent = "atualizado " + hora(Date.now()); });
+  '<span class="atualizado mut" data-atualizado>Atualizado ' + esc(hora(Date.now())) + "</span>";
+const marcarAtualizado = () => $$("[data-atualizado]").forEach((el) => { el.textContent = "Atualizado " + hora(Date.now()); });
 
-function erro(e) { $("#msg-txt").textContent = e && e.message ? e.message : String(e); $("#msg").hidden = false; }
+function erro(e) { $("#msg-txt").textContent = cap(e && e.message ? e.message : String(e)); $("#msg").hidden = false; }
 function limparErro() { $("#msg-txt").textContent = ""; $("#msg").hidden = true; }
 const carregando = (txt = "Carregando…") => '<div class="carregando">' + esc(txt) + "</div>";
 
@@ -194,8 +196,8 @@ async function renderPedidos() {
   const porFase = Object.fromEntries(d.fases.map((f) => [f, pedidos.filter((p) => p.fase === f)]));
   const barra = '<div class="barra">' +
     '<label for="dias" class="mut">Período</label><select id="dias">' +
-    [1, 7, 15, 30].map((n) => '<option value="' + n + '"' + (n === estado.fluxoDias ? " selected" : "") + ">" + (n === 1 ? "últimas 24 h" : "últimos " + n + " dias") + "</option>").join("") +
-    '</select><input id="busca-ped" type="search" placeholder="nº do ML ou NUNOTA" value="' + esc(estado.busca) + '" aria-label="Buscar pedido">' +
+    [1, 7, 15, 30].map((n) => '<option value="' + n + '"' + (n === estado.fluxoDias ? " selected" : "") + ">" + (n === 1 ? "Últimas 24 h" : "Últimos " + n + " dias") + "</option>").join("") +
+    '</select><input id="busca-ped" type="search" placeholder="Nº do ML ou NUNOTA" value="' + esc(estado.busca) + '" aria-label="Buscar pedido">' +
     '<span class="espaco"></span>' + btnAtualizar("recarregar-ped", "Atualizar agora (a tela já se atualiza a cada minuto)") + "</div>";
   const colunas = d.fases.map((f) => {
     const lista = porFase[f];
@@ -204,7 +206,7 @@ async function renderPedidos() {
       ? '<button type="button" class="primario" data-imprimir="' + esc(imprimiveis.map((p) => p.shipment_id).join(",")) + '">Imprimir etiquetas (' + imprimiveis.length + ")</button>" : "";
     return '<div class="coluna ' + f + '"><div class="coluna-topo"><div class="t">' + esc(FASE_INFO[f].nome) + '<span class="qtd">' + lista.length + "</span></div>" +
       '<div class="desc">' + esc(FASE_INFO[f].desc) + "</div>" + acaoColuna + '</div><div class="coluna-corpo">' +
-      (lista.length ? lista.map(cartaoPedido).join("") : '<span class="mut">nenhum</span>') + "</div></div>";
+      (lista.length ? lista.map(cartaoPedido).join("") : '<span class="mut">Nenhum</span>') + "</div></div>";
   }).join("");
   $("#conteudo").innerHTML = barra + '<div class="esteira">' + colunas + "</div>";
   $("#dias").onchange = (e) => { estado.fluxoDias = Number(e.target.value); navegar(); };
@@ -214,17 +216,17 @@ async function renderPedidos() {
 
 function cartaoPedido(p) {
   const tags = [];
-  if (p.nunota) tags.push('<span class="tag">pedido ' + esc(p.nunota) + "</span>");
+  if (p.nunota) tags.push('<span class="tag">Pedido ' + esc(p.nunota) + "</span>");
   const nf = nfDaChave(p.fiscal_key);
   if (nf) tags.push('<span class="tag info">NF ' + esc(nf) + "</span>");
-  if (p.situacao === "aguardando_comissao") tags.push('<span class="tag warn">aguardando comissão</span>');
-  if (p.situacao === "aguardando_pagamento") tags.push('<span class="tag warn">aguardando pagamento</span>');
-  if (p.situacao === "pronto") tags.push('<span class="tag info">pronto p/ gravar</span>');
-  if (p.gravacao === "erro") tags.push('<span class="tag err">erro na gravação</span>');
+  if (p.situacao === "aguardando_comissao") tags.push('<span class="tag warn">Aguardando comissão</span>');
+  if (p.situacao === "aguardando_pagamento") tags.push('<span class="tag warn">Aguardando pagamento</span>');
+  if (p.situacao === "pronto") tags.push('<span class="tag info">Pronto p/ gravar</span>');
+  if (p.gravacao === "erro") tags.push('<span class="tag err">Erro na gravação</span>');
   if (p.nf_status === "erro" || p.nf_status === "divergente") tags.push('<span class="tag err">NF: ' + esc(p.nf_status) + "</span>");
-  if (p.cancelamento) tags.push('<span class="tag ' + (/^cancelado/.test(p.cancelamento) ? "ok" : "warn") + '">' + esc(p.cancelamento.split(":")[0]) + "</span>");
+  if (p.cancelamento) tags.push('<span class="tag ' + (/^cancelado/.test(p.cancelamento) ? "ok" : "warn") + '">' + esc(cap(p.cancelamento.split(":")[0])) + "</span>");
   return '<button type="button" class="ped" data-ped="' + esc(p.chave) + '"><div class="l1"><span class="ch">' + seloCanal(p.canal) + " …" + esc(String(p.chave).slice(-8)) + '</span><span class="vl">' + brl(p.total) + "</span></div>" +
-    '<div class="l2">' + esc(dtIso(p.data_ml)) + (p.codparc ? " · parceiro " + esc(p.codparc) : "") + '</div><div class="l3">' + tags.join("") + "</div></button>";
+    '<div class="l2">' + esc(dtIso(p.data_ml)) + (p.codparc ? " · Parceiro " + esc(p.codparc) : "") + '</div><div class="l3">' + tags.join("") + "</div></button>";
 }
 
 async function abrirPedido(chave) {
@@ -245,18 +247,18 @@ async function abrirPedido(chave) {
   $("#gaveta-corpo").innerHTML =
     '<div class="acoes">' + acoes.join("") + "</div>" +
     '<dl class="dados"><dt>Fase</dt><dd>' + esc((FASE_INFO[fl.fase] || {}).nome || "—") + "</dd>" +
-    "<dt>Data no ML</dt><dd>" + esc(dtIso(p.data_ml)) + "</dd><dt>Status no ML</dt><dd>" + esc(p.status_ml) + "</dd>" +
+    "<dt>Data no ML</dt><dd>" + esc(dtIso(p.data_ml)) + "</dd><dt>Status no ML</dt><dd>" + esc(cap(p.status_ml)) + "</dd>" +
     "<dt>Orders</dt><dd>" + esc(p.order_ids) + "</dd><dt>Total</dt><dd>" + brl(p.total) + "</dd>" +
     "<dt>Comissão ML</dt><dd>" + brl(p.comissao) + "</dd><dt>Frete cobrado</dt><dd>" + brl(p.frete) + "</dd>" +
     "<dt>Parceiro</dt><dd>" + esc(p.codparc ?? "novo") + "</dd><dt>Pedido Sankhya</dt><dd>" + esc(p.nunota ?? "—") + (p.gravacao ? " (" + esc(p.gravacao) + ")" : "") + "</dd>" +
-    "<dt>NF</dt><dd>" + (nf ? esc(nf) + " · NUNOTA " + esc(fl.nunota_nf) : "—") + (fl.nf_status ? " · " + esc(fl.nf_status) : "") + "</dd>" +
-    "<dt>Envio</dt><dd>" + esc(fl.shipment_id ?? "—") + (fl.envio_status ? " · " + esc(fl.envio_status) + "/" + esc(fl.envio_substatus || "-") : "") + "</dd>" +
-    (p.cancelamento ? "<dt>Cancelamento</dt><dd>" + esc(p.cancelamento) + "</dd>" : "") +
-    (a.bloqueio ? '<dt>Bloqueio</dt><dd class="err">' + esc(a.bloqueio) + "</dd>" : "") +
-    (p.gravacao_erro ? '<dt>Erro</dt><dd class="err">' + esc(p.gravacao_erro) + "</dd>" : "") + "</dl>" +
-    (a.alertas && a.alertas.length ? "<div><b>Alertas</b><pre>" + a.alertas.map(esc).join("<br>") + "</pre></div>" : "") +
+    "<dt>NF</dt><dd>" + (nf ? esc(nf) + " · NUNOTA " + esc(fl.nunota_nf) : "—") + (fl.nf_status ? " · " + esc(cap(fl.nf_status)) : "") + "</dd>" +
+    "<dt>Envio</dt><dd>" + esc(fl.shipment_id ?? "—") + (fl.envio_status ? " · " + esc(cap(fl.envio_status)) + "/" + esc(fl.envio_substatus || "-") : "") + "</dd>" +
+    (p.cancelamento ? "<dt>Cancelamento</dt><dd>" + esc(cap(p.cancelamento)) + "</dd>" : "") +
+    (a.bloqueio ? '<dt>Bloqueio</dt><dd class="err">' + esc(cap(a.bloqueio)) + "</dd>" : "") +
+    (p.gravacao_erro ? '<dt>Erro</dt><dd class="err">' + esc(cap(p.gravacao_erro)) + "</dd>" : "") + "</dl>" +
+    (a.alertas && a.alertas.length ? "<div><b>Alertas</b><pre>" + a.alertas.map((x) => esc(cap(x))).join("<br>") + "</pre></div>" : "") +
     "<div><b>Itens</b><pre>" + esc(JSON.stringify(a.itens || [], null, 2)) + "</pre></div>" +
-    '<details><summary>incluirNota montado</summary><pre>' + esc(p.nota_json ? JSON.stringify(JSON.parse(p.nota_json), null, 2) : "—") + "</pre></details>";
+    '<details><summary>Nota montada (incluirNota)</summary><pre>' + esc(p.nota_json ? JSON.stringify(JSON.parse(p.nota_json), null, 2) : "—") + "</pre></details>";
   $("#gaveta").hidden = false;
 }
 
@@ -286,7 +288,7 @@ const expedicao = { lista: [], achado: null, ultimoBipe: "", sel: new Set(), fas
 // → Despachados (bipado na agência, visto no ML). Agendados e Despachados só listam.
 const FASES_SO_LISTA = ["agendados", "despachados"];
 /** Data de liberação do ML ("2026-09-28T00:00:00.000Z" é o DIA 28, não 21h do dia 27). */
-const diaLiberacao = (iso) => (iso ? new Date(iso).toLocaleDateString("pt-BR", { timeZone: "UTC", weekday: "short", day: "2-digit", month: "2-digit" }) : "data não informada");
+const diaLiberacao = (iso) => (iso ? new Date(iso).toLocaleDateString("pt-BR", { timeZone: "UTC", weekday: "short", day: "2-digit", month: "2-digit" }) : "Data não informada");
 // Flex: o ML libera a etiqueta sem esperar a NF. Só imprime com a NF já anexada no ML
 // (o servidor recusa também — etiquetas.ts).
 const ehFlex = (e) => e.logistica === "self_service";
@@ -320,7 +322,7 @@ const MAX_SEL = 20;
 
 function alertarCancelado(c) {
   $("#cancelado-detalhe").innerHTML = "Pedido ML <b>" + esc(c.pedido || c.codigo) + "</b>" +
-    (c.motivo ? "<br>" + esc(c.motivo) : "") + (c.envio_status ? "<br>Envio: " + esc(c.envio_status) : "");
+    (c.motivo ? "<br>" + esc(cap(c.motivo)) : "") + (c.envio_status ? "<br>Envio: " + esc(c.envio_status) : "");
   $("#cancelado").hidden = false;
   $(".alerta-caixa").focus(); // foco na caixa: o Enter do leitor não fecha o alerta sozinho
 }
@@ -375,7 +377,7 @@ async function renderExpedicao(sub) {
   atualizarContagemExpedicao();
   const prontas = d.etiquetas.filter((e) => e.substatus === "ready_to_print").length;
   $("#conteudo").innerHTML =
-    '<div class="bipe"><label for="bipe">Bipar etiqueta</label><input id="bipe" inputmode="numeric" autocomplete="off" placeholder="leia o código do pedido">' +
+    '<div class="bipe"><label for="bipe">Bipar etiqueta</label><input id="bipe" inputmode="numeric" autocomplete="off" placeholder="Leia o código do pedido">' +
     '<button type="button" id="limpar-bipe">Limpar</button>' + btnAtualizar("atualizar-exp", "Atualizar agora: relê os envios no Mercado Livre (a tela já se atualiza a cada minuto)") +
     '<span class="dica">Aceita nº do pedido do ML, nº do envio, chave ou número da NF. O 1º bipe localiza; bipar de novo (ou Enter) imprime.</span></div>' +
     '<div id="resultado-bipe"></div>' +
@@ -446,7 +448,7 @@ function localizar(codigo) {
     const e = achados[0];
     alvo.innerHTML = '<div class="achado"><div><div class="mut">Pedido ML</div><div class="grande">' + esc(e.chave) + "</div></div>" +
       '<div><div class="mut">NF</div><div class="grande">' + esc(nfDaChave(e.fiscal_key) || "—") + "</div></div>" +
-      '<div><div class="mut">Situação</div><div>' + (e.substatus === "ready_to_print" ? '<span class="tag info">para imprimir</span>' : '<span class="tag ok">já impressa ' + esc(dt(e.impresso_em)) + "</span>") + "</div></div>" +
+      '<div><div class="mut">Situação</div><div>' + (e.substatus === "ready_to_print" ? '<span class="tag info">Para imprimir</span>' : '<span class="tag ok">Já impressa ' + esc(dt(e.impresso_em)) + "</span>") + "</div></div>" +
       '<button type="button" class="primario" id="imprimir-achado">' + (e.substatus === "printed" ? "Reimprimir" : "Imprimir") + " etiqueta (Enter)</button></div>";
     $("#imprimir-achado").onclick = () => imprimirExpedicao(e).catch(erro);
   } else {
@@ -467,7 +469,7 @@ function desenharExpedicao() {
     ' aria-label="Selecionar pedido ' + esc(e.chave || e.shipment_id) + '"></td><td>' + seloCanal(e.canal) + " <b>" + esc(e.chave || "—") + "</b>" +
     (ehFlex(e) ? ' <span class="tag warn" title="Envio Flex: entrega no mesmo dia">Flex · hoje</span>' : "") + "</td><td>" +
     esc(nfDaChave(e.fiscal_key) || "—") + "</td><td>" + esc(e.shipment_id) + "</td><td>" + esc(dtIso(e.data_ml)) + '</td><td class="n">' + brl(e.total) + "</td><td>" +
-    (flexSemNf(e) ? '<span class="tag err">aguardando NF</span>' : e.substatus === "ready_to_print" ? '<span class="tag info">para imprimir</span>' : '<span class="tag ok">já impressa</span>') +
+    (flexSemNf(e) ? '<span class="tag err">Aguardando NF</span>' : e.substatus === "ready_to_print" ? '<span class="tag info">Para imprimir</span>' : '<span class="tag ok">Já impressa</span>') +
     '</td><td><button type="button" data-exp="' + esc(e.shipment_id) + '"' + (flexSemNf(e) ? ' disabled title="Flex sem NF no ML"' : "") + ">" + (e.substatus === "printed" ? "Reimprimir" : "Imprimir") + "</button></td></tr>").join("") ||
     '<tr><td colspan="8" class="mut">Nenhuma etiqueta liberada agora.</td></tr>';
   atualizarSelecao();
@@ -500,14 +502,14 @@ async function recarregarExpedicao() {
 function desenharAgendados() {
   $("#tb-exp").innerHTML = expedicao.outros.map((e) => "<tr><td></td><td><b>" + esc(e.chave || "—") + "</b></td><td>" + esc(nfDaChave(e.fiscal_key) || "—") +
     "</td><td>" + esc(e.shipment_id) + "</td><td>" + esc(dtIso(e.data_ml)) + '</td><td class="n">' + brl(e.total) + "</td><td>" +
-    '<span class="tag warn">libera ' + esc(diaLiberacao(e.liberacao)) + "</span></td><td></td></tr>").join("") ||
+    '<span class="tag warn">Libera ' + esc(diaLiberacao(e.liberacao)) + "</span></td><td></td></tr>").join("") ||
     '<tr><td colspan="8" class="mut">Nenhum pedido agendado.</td></tr>';
 }
 
 function desenharDespachados() {
   $("#tb-exp").innerHTML = expedicao.outros.map((e) => "<tr><td></td><td><b>" + esc(e.chave || "—") + "</b></td><td>" + esc(nfDaChave(e.fiscal_key) || "—") +
     "</td><td>" + esc(e.shipment_id) + "</td><td>" + esc(dtIso(e.data_ml)) + '</td><td class="n">' + brl(e.total) + "</td><td>" +
-    '<span class="tag ok">despachado ' + esc(dt(e.despachado_em)) + '</span> <span class="mut">' + esc([e.status, e.substatus].filter(Boolean).join(" / ")) + "</span></td><td></td></tr>").join("") ||
+    '<span class="tag ok">Despachado ' + esc(dt(e.despachado_em)) + '</span> <span class="mut">' + esc(cap([e.status, e.substatus].filter(Boolean).join(" / "))) + "</span></td><td></td></tr>").join("") ||
     '<tr><td colspan="8" class="mut">Nenhum envio despachado hoje.</td></tr>';
 }
 
@@ -585,7 +587,7 @@ async function imprimirExpedicao(e) {
 /* ------------------------------------------------------------------ Produtos */
 // Uma linha por SKU do Sankhya (saldo e preço de loja) e a presença em cada canal de venda.
 // Os cartões do topo são os filtros. Clicar na linha abre o detalhe por canal.
-const TXT_SIT = { ativo: "ativo", pausado: "pausado", sem_estoque: "sem estoque", inativo: "inativo", nao_anunciado: "não anunciado" };
+const TXT_SIT = { ativo: "Ativo", pausado: "Pausado", sem_estoque: "Sem estoque", inativo: "Inativo", nao_anunciado: "Não anunciado" };
 const prod = { dados: null, filtro: "todos", busca: "", limite: 300 };
 const temDiv = (p, campo) => p.canais.ml.anuncios.some((a) => a[campo]);
 const FILTROS_PROD = [
@@ -617,12 +619,12 @@ function desenharProdutos() {
   const filtrados = lista.filter(f).filter((p) => !b || p.sku.includes(b) || String(p.produto || "").toUpperCase().includes(b) ||
     p.canais.ml.anuncios.some((a) => a.item_id.includes(b)));
   const linhas = filtrados.slice(0, prod.limite).map((p) => {
-    const avisos = (temDiv(p, "div_qtd") ? '<span class="tag warn">estoque a ajustar</span>' : "") + (temDiv(p, "div_preco") ? '<span class="tag warn">preço a ajustar</span>' : "");
+    const avisos = (temDiv(p, "div_qtd") ? '<span class="tag warn">Estoque a ajustar</span>' : "") + (temDiv(p, "div_preco") ? '<span class="tag warn">Preço a ajustar</span>' : "");
     const ult = p.canais.ml.anuncios.filter((a) => a.acao_em).sort((x, y) => y.acao_em - x.acao_em)[0];
     return '<tr class="clicavel" data-sku="' + esc(p.sku) + '"><td><b>' + esc(p.sku) + '</b></td><td class="prod-nome">' + esc(p.produto || "—") + "</td>" +
-      '<td class="n">' + (p.disp == null ? '<span class="mut">sem cadastro</span>' : esc(p.disp)) + '</td><td class="n">' + brl(p.preco_loja) + "</td>" +
+      '<td class="n">' + (p.disp == null ? '<span class="mut">Sem cadastro</span>' : esc(p.disp)) + '</td><td class="n">' + brl(p.preco_loja) + "</td>" +
       '<td><div class="canais-linha">' + d.canais.map((c) => seloSituacao(c, p.canais[c.id] || { situacao: "nao_anunciado", anuncios: [] })).join("") + avisos + "</div></td>" +
-      '<td class="mut" title="' + esc(ult ? ult.ultima_acao : "") + '">' + (ult ? esc(haQuanto(ult.acao_em)) : "—") + "</td></tr>";
+      '<td class="mut" title="' + esc(ult ? ult.ultima_acao : "") + '">' + (ult ? esc(cap(haQuanto(ult.acao_em))) : "—") + "</td></tr>";
   }).join("");
   $("#conteudo").innerHTML =
     '<div class="cards">' + FILTROS_PROD.map(([k, t, fn]) => {
@@ -651,10 +653,10 @@ function desenharProdutos() {
 
 function situacaoAnuncio(a) {
   const s = String(a.sub_status);
-  if (s.includes("paused_by_seller")) return '<span class="tag warn">pausado por vocês</span>';
-  if (a.status === "active") return '<span class="tag ok">ativo</span>';
-  if (s.includes("out_of_stock")) return '<span class="tag">sem estoque</span>';
-  return '<span class="tag">' + esc(a.status) + "</span>";
+  if (s.includes("paused_by_seller")) return '<span class="tag warn">Pausado por vocês</span>';
+  if (a.status === "active") return '<span class="tag ok">Ativo</span>';
+  if (s.includes("out_of_stock")) return '<span class="tag">Sem estoque</span>';
+  return '<span class="tag">' + esc(cap(a.status)) + "</span>";
 }
 
 function abrirProduto(sku) {
@@ -670,20 +672,20 @@ function abrirProduto(sku) {
     } else {
       corpo = '<div class="tabela"><table><thead><tr><th>Anúncio</th><th>Tipo</th><th>Situação</th><th>Flex</th><th class="n">Estoque</th><th class="n">Preço</th><th class="n">Preço alvo</th></tr></thead><tbody>' +
         s.anuncios.map((a) => '<tr><td><a href="https://produto.mercadolivre.com.br/' + esc(a.item_id.replace(/^MLB/, "MLB-")) + '" target="_blank" rel="noopener">' + esc(a.item_id) + "</a></td>" +
-          "<td>" + esc(TIPOS[a.listing_type] || a.listing_type) + "</td><td>" + situacaoAnuncio(a) + "</td><td>" + (a.flex === 1 ? '<span class="tag ok">sim</span>' : a.flex === 0 ? "não" : "—") +
+          "<td>" + esc(TIPOS[a.listing_type] || a.listing_type) + "</td><td>" + situacaoAnuncio(a) + "</td><td>" + (a.flex === 1 ? '<span class="tag ok">Sim</span>' : a.flex === 0 ? "Não" : "—") +
           '</td><td class="n' + (a.div_qtd ? " warn" : "") + '">' + esc(a.qtd_ml) +
           '</td><td class="n' + (a.div_preco ? " warn" : "") + '">' + brl(a.preco_ml) + '</td><td class="n">' + brl(a.preco_alvo) + "</td></tr>" +
-          (a.ultima_acao ? '<tr><td colspan="7" class="mut">Última ação ' + esc(dt(a.acao_em)) + ": " + esc(a.ultima_acao) + "</td></tr>" : "")).join("") +
+          (a.ultima_acao ? '<tr><td colspan="7" class="mut">Última ação ' + esc(dt(a.acao_em)) + ": " + esc(cap(a.ultima_acao)) + "</td></tr>" : "")).join("") +
         "</tbody></table></div>";
     }
-    return '<div class="bloco-canal"><div class="cab"><b>' + esc(c.nome) + "</b>" + (c.integrado ? seloSituacao(c, s) : '<span class="canal off">em breve</span>') + "</div>" + corpo + "</div>";
+    return '<div class="bloco-canal"><div class="cab"><b>' + esc(c.nome) + "</b>" + (c.integrado ? seloSituacao(c, s) : '<span class="canal off">Em breve</span>') + "</div>" + corpo + "</div>";
   }).join("");
   $("#gaveta-titulo").textContent = p.sku;
   $("#gaveta-corpo").innerHTML =
     '<dl class="dados"><dt>Produto</dt><dd>' + esc(p.produto || "—") + "</dd>" +
     "<dt>Saldo no Sankhya</dt><dd>" + (p.disp == null ? "SKU não encontrado no cadastro" : esc(p.disp)) + "</dd>" +
     "<dt>Preço de loja</dt><dd>" + brl(p.preco_loja) + ' <span class="mut">(tabela 0)</span></dd>' +
-    "<dt>Cadastro</dt><dd>" + (p.ativo_erp == null ? "—" : p.ativo_erp ? "ativo" : '<span class="warn">inativo no Sankhya</span>') + "</dd></dl>" +
+    "<dt>Cadastro</dt><dd>" + (p.ativo_erp == null ? "—" : p.ativo_erp ? "Ativo" : '<span class="warn">Inativo no Sankhya</span>') + "</dd></dl>" +
     '<p class="secao-gaveta">Canais de venda</p>' + blocos;
   $("#gaveta").hidden = false;
 }
@@ -707,7 +709,7 @@ async function renderPrecificacao() {
     "Vale para os anúncios com saldo. Mudanças acima de 25% num anúncio não são aplicadas automaticamente. Depois de salvar, o ML é atualizado em até ~2 min (15 anúncios por rodada).</p>" +
     '<div class="reguas">' + Object.keys(TIPOS).map(cartao).join("") + "</div>" +
     '<div class="form-linha"><span class="mut">Fica registrado com o seu login (' + esc(eu ? eu.email : "") + ").</span>" +
-    '<label class="motivo">Motivo<input id="motivo" maxlength="200" placeholder="ex.: campanha, custo de frete"></label>' +
+    '<label class="motivo">Motivo<input id="motivo" maxlength="200" placeholder="Ex.: campanha, custo de frete"></label>' +
     '<button type="button" id="simular">Simular impacto</button><button type="button" id="salvar" class="primario">Salvar régua</button></div>' +
     '<div id="simulacao"></div></div>' +
     '<div class="painel"><h3>Histórico de alterações</h3><table><thead><tr><th>Quando</th><th>Quem</th><th>Régua</th><th>Motivo</th></tr></thead><tbody>' +
@@ -747,13 +749,13 @@ async function renderIntegracao(sub) {
 async function renderLogs() {
   const d = await api("/api/log");
   const nivel = { erro: "err", aviso: "warn", info: "ok" };
-  $("#conteudo").innerHTML = '<div class="barra"><input id="busca-log" type="search" placeholder="filtrar mensagens" aria-label="Filtrar logs"><select id="nivel-log" aria-label="Nível">' +
-    '<option value="">todos os níveis</option><option value="erro">erro</option><option value="aviso">aviso</option><option value="info">info</option></select></div>' +
+  $("#conteudo").innerHTML = '<div class="barra"><input id="busca-log" type="search" placeholder="Filtrar mensagens" aria-label="Filtrar logs"><select id="nivel-log" aria-label="Nível">' +
+    '<option value="">Todos os níveis</option><option value="erro">Erro</option><option value="aviso">Aviso</option><option value="info">Info</option></select></div>' +
     '<div class="painel"><table><thead><tr><th>Quando</th><th>Nível</th><th>Pedido</th><th>Mensagem</th></tr></thead><tbody id="tb-log"></tbody></table></div>';
   const desenhar = () => {
     const q = $("#busca-log").value.toLowerCase(), n = $("#nivel-log").value;
     $("#tb-log").innerHTML = d.log.filter((l) => (!n || l.nivel === n) && (!q || String(l.msg).toLowerCase().includes(q) || String(l.chave || "").includes(q)))
-      .map((l) => "<tr><td>" + esc(dt(l.em)) + '</td><td><span class="tag ' + (nivel[l.nivel] || "") + '">' + esc(l.nivel) + "</span></td><td>" + esc(l.chave || "—") + "</td><td>" + esc(l.msg) + "</td></tr>").join("");
+      .map((l) => "<tr><td>" + esc(dt(l.em)) + '</td><td><span class="tag ' + (nivel[l.nivel] || "") + '">' + esc(cap(l.nivel)) + "</span></td><td>" + esc(l.chave || "—") + "</td><td>" + esc(cap(l.msg)) + "</td></tr>").join("");
   };
   $("#busca-log").oninput = desenhar; $("#nivel-log").onchange = desenhar; desenhar();
 }
@@ -762,17 +764,21 @@ async function renderEventos() {
   const d = await api("/api/eventos");
   $("#conteudo").innerHTML = '<div class="painel"><table><thead><tr><th>ID</th><th>Recebido</th><th>Tópico</th><th>Recurso</th><th>Status</th><th class="n">Tent.</th><th>Erro</th><th></th></tr></thead><tbody>' +
     d.eventos.map((e) => "<tr><td>" + e.id + "</td><td>" + esc(dt(e.recebido_em)) + "</td><td>" + esc(e.topic) + "</td><td>" + esc(e.resource) +
-      '</td><td><span class="tag ' + ({ ok: "ok", erro: "err", pendente: "warn" }[e.status] || "") + '">' + esc(e.status) + '</span></td><td class="n">' + e.tentativas +
-      '</td><td class="mut">' + esc(e.erro || "") + "</td><td>" + (e.status === "erro" ? '<button type="button" data-reabrir="' + e.id + '">reabrir</button>' : "") + "</td></tr>").join("") + "</tbody></table></div>";
+      '</td><td><span class="tag ' + ({ ok: "ok", erro: "err", pendente: "warn" }[e.status] || "") + '">' + esc(cap(e.status)) + '</span></td><td class="n">' + e.tentativas +
+      '</td><td class="mut">' + esc(cap(e.erro || "")) + "</td><td>" + (e.status === "erro" ? '<button type="button" data-reabrir="' + e.id + '">Reabrir</button>' : "") + "</td></tr>").join("") + "</tbody></table></div>";
 }
+
+const NOME_MODO = { automatico: "Automático", manual: "Manual", sombra: "Sombra" };
+const NOME_NF = { enviado: "Enviado", ja_no_ml: "Já no ML", pronto: "Pronto", aguardando_ml: "Aguardando ML", erro: "Erro", divergente: "Divergente", cancelado: "Cancelado", nao_se_aplica: "Não se aplica" };
+const NOME_LOGISTICA = { xd_drop_off: "Agência (xd_drop_off)", self_service: "Flex", drop_off: "Agência", cross_docking: "Coleta", fulfillment: "Full" };
 
 async function renderNfs() {
   const d = await api("/api/nfs");
   const cor = { enviado: "ok", ja_no_ml: "ok", pronto: "info", aguardando_ml: "warn", erro: "err", divergente: "err", cancelado: "", nao_se_aplica: "" };
-  $("#conteudo").innerHTML = '<div class="barra"><span class="mut">Envio do XML: modo <b>' + esc(d.xmlModo) + '</b></span><span class="espaco"></span><button type="button" id="varrer">Varrer NFs faturadas agora</button></div>' +
+  $("#conteudo").innerHTML = '<div class="barra"><span class="mut">Envio do XML: modo <b>' + esc(NOME_MODO[d.xmlModo] || cap(d.xmlModo)) + '</b></span><span class="espaco"></span><button type="button" id="varrer">Varrer NFs faturadas agora</button></div>' +
     '<div class="painel"><table><thead><tr><th>Atualizado</th><th>Pedido ML</th><th>NF</th><th>Envio</th><th>Logística</th><th>Status</th><th>Detalhe</th><th></th></tr></thead><tbody>' +
     d.nfs.map((n) => "<tr><td>" + esc(dt(n.atualizado_em)) + "</td><td>" + esc(n.chave) + "</td><td>" + esc(nfDaChave(n.fiscal_key) || "—") + " <span class='mut'>(" + esc(n.nunota_nf) + ")</span></td><td>" +
-      esc(n.shipment_id || "—") + "</td><td>" + esc(n.logistica || "—") + '</td><td><span class="tag ' + (cor[n.status] || "") + '">' + esc(n.status) + '</span></td><td class="mut">' + esc(n.detalhe || "") +
+      esc(n.shipment_id || "—") + "</td><td>" + esc(NOME_LOGISTICA[n.logistica] || n.logistica || "—") + '</td><td><span class="tag ' + (cor[n.status] || "") + '">' + esc(NOME_NF[n.status] || cap(n.status)) + '</span></td><td class="mut">' + esc(cap(n.detalhe || "")) +
       "</td><td>" + (n.status === "pronto" || n.status === "erro" ? '<button type="button" data-acao="xml" data-chave="' + esc(n.chave) + '">Enviar XML</button>' : "") + "</td></tr>").join("") + "</tbody></table></div>";
   $("#varrer").onclick = async (e) => { e.target.disabled = true; e.target.textContent = "Varrendo…"; await post("/api/nfs/varrer"); navegar(); };
 }
@@ -851,7 +857,7 @@ document.addEventListener("keydown", (ev) => { if (ev.key === "Escape") menuUsua
 
 /* ------------------------------------------------------------------ Integrações: árvore */
 // Sankhya (ERP) em cima, SkyHub no meio e os canais embaixo. A cor da linha é a saúde da ligação.
-const TXT_SAUDE = { ok: "operando", warn: "atenção", err: "sem resposta", off: "em breve" };
+const TXT_SAUDE = { ok: "Operando", warn: "Atenção", err: "Sem resposta", off: "Em breve" };
 
 function noArvore({ logo, marca, titulo, sub, saude, det, extra, classe }) {
   return '<div class="no-arvore ' + (classe || "") + " saude-" + saude + '">' +
@@ -860,7 +866,7 @@ function noArvore({ logo, marca, titulo, sub, saude, det, extra, classe }) {
     '<span class="estado"><span class="ponto ' + (saude === "off" ? "" : saude) + '"></span>' + TXT_SAUDE[saude] + "</span>" +
     (det ? '<span class="det">' + det + "</span>" : "") + (extra || "") + "</div>";
 }
-const metrica = (valor, rotulo, dica) => '<div class="metrica"><b>' + esc(valor) + "</b><span>" + esc(rotulo) + (dica ? ' <span class="mut">· ' + esc(dica) + "</span>" : "") + "</span></div>";
+const metrica = (valor, rotulo, dica) => '<div class="metrica"><b>' + esc(cap(valor)) + "</b><span>" + esc(cap(rotulo)) + (dica ? ' <span class="mut">· ' + esc(cap(dica)) + "</span>" : "") + "</span></div>";
 
 async function renderArvore() {
   const s = await api("/api/integracao");
@@ -873,29 +879,29 @@ async function renderArvore() {
       saude: saudeMl,
       html: noArvore({
         logo: "/logos/mercadolivre.webp", marca: "logo-claro", titulo: "Mercado Livre", saude: saudeMl,
-        det: "token " + (s.ml.tokenOk ? "válido até " + esc(hora(s.ml.expiraEm)) : "INVÁLIDO") + " · último aviso " + esc(haQuanto(s.ml.ultimoEvento)) +
+        det: "Token " + (s.ml.tokenOk ? "válido até " + esc(hora(s.ml.expiraEm)) : "INVÁLIDO") + " · Último aviso " + esc(haQuanto(s.ml.ultimoEvento)) +
           (s.ml.eventosComErro ? '<br><a href="#integracao/eventos">' + esc(s.ml.eventosComErro) + " evento(s) com erro</a>" : ""),
-        extra: '<div class="metricas">' + metrica(h.eventosRecebidos, "vendas recebidas hoje", "webhook") + metrica(h.xmlEnviados, "XML de NF enviados", "libera a etiqueta") +
-          metrica(h.ajustesAnuncio, "estoque e preço ajustados", h.falhasAnuncio ? h.falhasAnuncio + " falha(s)" : "a cada 2 min") + metrica(h.etiquetasBaixadas, "etiquetas baixadas", "PDF 10x15") + "</div>",
+        extra: '<div class="metricas">' + metrica(h.eventosRecebidos, "Vendas recebidas hoje", "Webhook") + metrica(h.xmlEnviados, "XML de NF enviados", "Libera a etiqueta") +
+          metrica(h.ajustesAnuncio, "Estoque e preço ajustados", h.falhasAnuncio ? h.falhasAnuncio + " falha(s)" : "A cada 2 min") + metrica(h.etiquetasBaixadas, "Etiquetas baixadas", "PDF 10x15") + "</div>",
       }),
     },
-    { saude: "off", html: noArvore({ titulo: "Nuvemshop", sub: "loja da Skyline", saude: "off", classe: "breve", det: "próxima integração" }) },
+    { saude: "off", html: noArvore({ titulo: "Nuvemshop", sub: "Loja da Skyline", saude: "off", classe: "breve", det: "Próxima integração" }) },
   ];
   $("#conteudo").innerHTML =
     '<div class="painel"><div class="arvore">' +
-    noArvore({ logo: "/logos/sankhya.svg", marca: "logo-escuro", titulo: "Sankhya", sub: "ERP · fonte de estoque, preço e fiscal", saude: saudeSk,
-      det: "última leitura " + esc(haQuanto(s.sankhya.ultimaLeitura)) + (s.sankhya.ultimoErro ? " · último erro " + esc(haQuanto(s.sankhya.ultimoErro.em)) : "") }) +
+    noArvore({ logo: "/logos/sankhya.svg", marca: "logo-escuro", titulo: "Sankhya", sub: "ERP · Fonte de estoque, preço e fiscal", saude: saudeSk,
+      det: "Última leitura " + esc(haQuanto(s.sankhya.ultimaLeitura)) + (s.sankhya.ultimoErro ? " · Último erro " + esc(haQuanto(s.sankhya.ultimoErro.em)) : "") }) +
     '<div class="tronco saude-' + saudeSk + '"><div class="rotulos">' +
-      '<span class="rotulo">' + metrica(h.pedidosGravados, "pedidos gravados hoje", "parceiro + pedido 1090") + "</span>" +
-      '<span class="rotulo">' + metrica(haQuanto(s.sankhya.ultimaLeitura), "leitura de estoque e preço", "tabela 0 e TGFEST") + "</span></div></div>" +
-    noArvore({ titulo: "SkyHub", sub: "integração", saude: saudeHub, classe: "hub",
-      det: "última rodada " + esc(haQuanto(s.skyhub.ultimaRodada)) + (s.skyhub.rodadaAbortada ? ' · <span class="warn">abortada: ' + esc(s.skyhub.rodadaAbortada) + "</span>" : "") +
+      '<span class="rotulo">' + metrica(h.pedidosGravados, "Pedidos gravados hoje", "Parceiro + pedido 1090") + "</span>" +
+      '<span class="rotulo">' + metrica(haQuanto(s.sankhya.ultimaLeitura), "Leitura de estoque e preço", "Tabela 0 e TGFEST") + "</span></div></div>" +
+    noArvore({ titulo: "SkyHub", sub: "Integração", saude: saudeHub, classe: "hub",
+      det: "Última rodada " + esc(haQuanto(s.skyhub.ultimaRodada)) + (s.skyhub.rodadaAbortada ? ' · <span class="warn">Abortada: ' + esc(s.skyhub.rodadaAbortada) + "</span>" : "") +
         "<br>" + esc(s.skyhub.eventosPendentes) + " evento(s) na fila · " + (h.errosLog ? '<a href="#integracao/logs">' + esc(h.errosLog) + " erro(s) hoje</a>" : "0 erros hoje") }) +
     '<div class="galhos' + (canais.length === 1 ? " um" : "") + '">' + canais.map((c) => '<div class="galho saude-' + c.saude + '">' + c.html + "</div>").join("") + "</div>" +
     "</div></div>" +
     '<div class="painel"><h3>Modos de operação</h3><table><tbody>' +
     [["Pedidos → Sankhya", s.modos.pedidos], ["XML da NF → ML", s.modos.xml], ["Cancelamento no Sankhya", s.modos.cancelamento], ["Estoque → ML", s.modos.estoque], ["Preço → ML", s.modos.preco]]
-      .map(([n, m]) => "<tr><td>" + esc(n) + '</td><td><span class="tag ' + (m === "automatico" ? "ok" : m === "manual" ? "warn" : "") + '">' + esc(m) + "</span></td></tr>").join("") +
+      .map(([n, m]) => "<tr><td>" + esc(n) + '</td><td><span class="tag ' + (m === "automatico" ? "ok" : m === "manual" ? "warn" : "") + '">' + esc(NOME_MODO[m] || cap(m)) + "</span></td></tr>").join("") +
     "</tbody></table></div>";
 }
 

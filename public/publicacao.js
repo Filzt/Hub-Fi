@@ -41,7 +41,7 @@ function desenharFilaPub() {
     '<span class="espaco"></span><span class="atualizado mut">Sankhya lido ' + esc(d.atualizadoEm ? dt(d.atualizadoEm) : "nunca") + "</span>" +
     '<button id="atualizar-pub" type="button" class="icone" title="Reler o Sankhya e casar de novo" aria-label="Reler o Sankhya e casar de novo">↻</button></div>' +
     '<form id="form-familia" class="barra familia"><label for="link-familia" class="mut">Modelo sem ficha?</label>' +
-    '<input id="link-familia" placeholder="cole o link da ficha recondicionada no ML (…/p/MLB20…)">' +
+    '<input id="link-familia" placeholder="Cole o link da ficha recondicionada no ML (…/p/MLB20…)">' +
     '<button type="submit">Adicionar família de fichas</button></form>' +
     (d.duplicados && d.duplicados.length ? '<p class="dica">SKU duplicado no Sankhya (fica fora da fila até corrigir o cadastro): ' + esc(d.duplicados.join(", ")) + "</p>" : "") +
     '<div class="painel"><table><thead><tr><th>SKU</th><th>Produto</th><th>Grau</th><th class="n">Saldo</th><th class="n">Preço Clássico</th><th>Ficha sugerida</th><th></th></tr></thead><tbody>' +
@@ -49,13 +49,13 @@ function desenharFilaPub() {
       const f = i.fichas[0];
       const ultima = i.ultima_publicacao;
       const tagUltima = ultima ? ' <span class="tag ' + (ultima.status === "erro" ? "err" : "ok") + '" title="' + esc(ultima.detalhe || "") + '">' +
-        (ultima.status === "erro" ? "última tentativa recusada" : "publicado " + esc(ultima.mlb || "")) + "</span>" : "";
+        (ultima.status === "erro" ? "Última tentativa recusada" : "Publicado " + esc(ultima.mlb || "")) + "</span>" : "";
       return "<tr><td><b>" + esc(i.sku) + "</b></td><td>" + esc(i.produto) + tagUltima + "</td><td>" + esc(i.grau_ml || i.qualidade || "—") +
         '</td><td class="n">' + esc(i.disp) + '</td><td class="n">' + brl(i.precos.gold_special) + "</td><td>" +
         (f ? '<a href="https://www.mercadolivre.com.br/p/' + esc(f.pdp) + '" target="_blank" rel="noopener">' + esc(f.nome) + "</a>" +
           (i.fichas.length > 1 ? ' <span class="mut">+' + (i.fichas.length - 1) + "</span>" : "") +
           (f.ocupada_classico ? ' <span class="tag warn">Clássico já ocupado</span>' : "")
-          : '<span class="mut">' + esc(i.motivo || "—") + "</span>") +
+          : '<span class="mut">' + esc(cap(i.motivo || "—")) + "</span>") +
         "</td><td>" + (f ? '<button type="button" class="primario" data-conferir="' + esc(i.sku) + '">Conferir</button>' : "") + "</td></tr>";
     }).join("") || '<tr><td colspan="7" class="mut">Nada nesta lista.</td></tr>') +
     "</tbody></table></div>";
@@ -95,13 +95,13 @@ async function conferirPub(sku) {
     d.fichas.map((f) => {
       const ok = fichaOk(f);
       return '<label class="ficha' + (ok ? "" : " indisponivel") + '"><input type="radio" name="pdp" value="' + esc(f.pdp) + '"' + (f === primeira ? " checked" : "") + (ok ? "" : " disabled") + ">" +
-        (f.imagem ? '<img src="' + esc(f.imagem) + '" alt="" loading="lazy">' : '<span class="sem-foto">sem foto</span>') +
+        (f.imagem ? '<img src="' + esc(f.imagem) + '" alt="" loading="lazy">' : '<span class="sem-foto">Sem foto</span>') +
         '<span class="ficha-txt"><b>' + esc(f.nome) + '</b><span class="mut">' + esc(f.pdp) + " · " + esc(f.grau || "?") + " · " + esc(f.cor || "?") + " · " + esc(f.capacidade || "?") + "</span>" +
-        '<span>' + (f.concorrentes.total ? f.concorrentes.total + " anúncio(s) na ficha, menor preço " + brl(f.concorrentes.menor) + (f.concorrentes.nossos ? " (" + f.concorrentes.nossos + " nosso)" : "") : "ficha sem concorrentes") + "</span>" +
-        (f.avisos || []).map((w) => '<span class="tag warn">' + esc(w) + "</span>").join("") +
-        (f.ocupada.length ? '<span class="tag warn">já temos: ' + f.ocupada.map((o) => esc(NOME_TIPO[o.tipo] || o.tipo) + " " + esc(o.mlb)).join(", ") + "</span>" : "") +
-        (!ok ? '<span class="tag err">' + (f.status !== "active" ? "ficha " + esc(f.status) : "categoria " + esc(f.dominio || "?") + " ainda não publicada") + "</span>" : "") +
-        '<a href="' + esc(f.link) + '" target="_blank" rel="noopener">abrir no ML ↗</a></span></label>';
+        '<span>' + (f.concorrentes.total ? f.concorrentes.total + " anúncio(s) na ficha, menor preço " + brl(f.concorrentes.menor) + (f.concorrentes.nossos ? " (" + f.concorrentes.nossos + " nosso)" : "") : "Ficha sem concorrentes") + "</span>" +
+        (f.avisos || []).map((w) => '<span class="tag warn">' + esc(cap(w)) + "</span>").join("") +
+        (f.ocupada.length ? '<span class="tag warn">Já temos: ' + f.ocupada.map((o) => esc(NOME_TIPO[o.tipo] || o.tipo) + " " + esc(o.mlb)).join(", ") + "</span>" : "") +
+        (!ok ? '<span class="tag err">' + (f.status !== "active" ? "Ficha " + esc(f.status) : "Categoria " + esc(f.dominio || "?") + " ainda não publicada") + "</span>" : "") +
+        '<a href="' + esc(f.link) + '" target="_blank" rel="noopener">Abrir no ML ↗</a></span></label>';
     }).join("") +
     '<h3>Tipo de anúncio</h3><div class="tipos">' +
     Object.keys(NOME_TIPO).map((t) => '<label class="check"><input type="radio" name="tipo" value="' + t + '"' + (t === "gold_special" ? " checked" : "") + "> " +
@@ -140,8 +140,8 @@ async function renderHistoricoPub() {
   const cor = { criado: "info", auditado: "ok", divergente: "warn", erro: "err" };
   $("#conteudo").innerHTML = '<div class="painel"><table><thead><tr><th>Quando</th><th>SKU</th><th>Ficha</th><th>Tipo</th><th class="n">Preço</th><th class="n">Qtd</th><th>Situação</th><th>Anúncio</th><th>Quem</th></tr></thead><tbody>' +
     (d.publicacoes.map((p) => "<tr><td>" + esc(dt(p.em)) + "</td><td><b>" + esc(p.sku) + '</b></td><td><a href="https://www.mercadolivre.com.br/p/' + esc(p.pdp) + '" target="_blank" rel="noopener">' + esc(p.pdp) +
-      "</a></td><td>" + esc(NOME_TIPO[p.tipo] || p.tipo) + '</td><td class="n">' + brl(p.preco) + '</td><td class="n">' + esc(p.qtd ?? "—") + '</td><td><span class="tag ' + (cor[p.status] || "") + '" title="' + esc(p.detalhe || "") + '">' + esc(p.status) +
-      '</span><div class="mut">' + esc(p.detalhe || "") + "</div></td><td>" + (p.mlb ? '<a href="https://produto.mercadolivre.com.br/' + esc(String(p.mlb).replace(/^MLB/, "MLB-")) + '" target="_blank" rel="noopener">' + esc(p.mlb) + "</a>" : "—") +
+      "</a></td><td>" + esc(NOME_TIPO[p.tipo] || p.tipo) + '</td><td class="n">' + brl(p.preco) + '</td><td class="n">' + esc(p.qtd ?? "—") + '</td><td><span class="tag ' + (cor[p.status] || "") + '" title="' + esc(p.detalhe || "") + '">' + esc(cap(p.status)) +
+      '</span><div class="mut">' + esc(cap(p.detalhe || "")) + "</div></td><td>" + (p.mlb ? '<a href="https://produto.mercadolivre.com.br/' + esc(String(p.mlb).replace(/^MLB/, "MLB-")) + '" target="_blank" rel="noopener">' + esc(p.mlb) + "</a>" : "—") +
       "</td><td>" + esc(p.quem) + "</td></tr>").join("") || '<tr><td colspan="9" class="mut">Nenhuma publicação ainda.</td></tr>') +
     "</tbody></table></div>";
 }
@@ -178,11 +178,11 @@ function resumoConfigFlex(c) {
   if (c.erro && !c.assinatura) return '<p class="nao-achado">Não consegui ler a assinatura Flex: ' + esc(c.erro) + "</p>";
   const faixa = (d) => {
     const f = (c.faixas[d] || [])[0];
-    return f ? "corte " + f.cutoff + "h · entrega " + f.from + "h–" + f.to + "h · até " + f.capacity + " pedidos" : '<span class="mut">não entrega</span>';
+    return f ? "Corte " + f.cutoff + "h · Entrega " + f.from + "h–" + f.to + "h · Até " + f.capacity + " pedidos" : '<span class="mut">Não entrega</span>';
   };
-  return '<dl class="dados"><dt>Assinatura</dt><dd>' + (c.assinatura === "in" ? '<span class="tag ok">ativa</span>' : '<span class="tag warn">' + esc(c.assinatura || "—") + "</span>") + "</dd>" +
+  return '<dl class="dados"><dt>Assinatura</dt><dd>' + (c.assinatura === "in" ? '<span class="tag ok">Ativa</span>' : '<span class="tag warn">' + esc(cap(c.assinatura || "—")) + "</span>") + "</dd>" +
     "<dt>Saída</dt><dd>" + esc(c.origem || "—") + "</dd>" +
-    "<dt>Prazo</dt><dd>" + (c.janela === "same_day" ? "entrega no mesmo dia" : c.janela === "next_day" ? "entrega no dia seguinte" : esc(c.janela || "—")) + "</dd>" +
+    "<dt>Prazo</dt><dd>" + (c.janela === "same_day" ? "Entrega no mesmo dia" : c.janela === "next_day" ? "Entrega no dia seguinte" : esc(cap(c.janela || "—"))) + "</dd>" +
     Object.keys(DIAS_FLEX).map((d) => "<dt>" + DIAS_FLEX[d] + "</dt><dd>" + faixa(d) + "</dd>").join("") +
     "<dt>Zonas</dt><dd>" + (c.zonas.length ? c.zonas.map((z) => esc(z.replace(/^BR-SP-/, "SP "))).join(", ") : "—") + "</dd></dl>" +
     '<p class="dica">Zonas, horário de corte e capacidade se mudam no painel do Mercado Livre (Vendas → Envios Flex).</p>';
@@ -212,7 +212,7 @@ function desenharFlex() {
     (lista.map((a) => '<tr class="' + (flexTela.sel.has(a.item_id) ? "sel" : "") + '"><td class="sel"><input type="checkbox" data-sel-flex="' + esc(a.item_id) + '"' + (flexTela.sel.has(a.item_id) ? " checked" : "") + ' aria-label="Selecionar ' + esc(a.item_id) + '"></td>' +
       '<td><a href="https://produto.mercadolivre.com.br/' + esc(a.item_id.replace(/^MLB/, "MLB-")) + '" target="_blank" rel="noopener">' + esc(a.item_id) + "</a></td><td><b>" + esc(a.sku || "—") + '</b></td><td class="prod-nome">' + esc(a.produto || "—") + "</td>" +
       "<td>" + situacaoAnuncio(a) + '</td><td class="n">' + esc(a.qtd_ml) + "</td><td>" +
-      (a.flex === 1 ? '<span class="tag ok">com Flex</span>' : a.flex === 0 ? '<span class="tag">sem Flex</span>' : '<span class="mut">lendo…</span>') + "</td></tr>").join("") ||
+      (a.flex === 1 ? '<span class="tag ok">Com Flex</span>' : a.flex === 0 ? '<span class="tag">Sem Flex</span>' : '<span class="mut">Lendo…</span>') + "</td></tr>").join("") ||
       '<tr><td colspan="7" class="vazio">Nenhum anúncio neste filtro.</td></tr>') + "</tbody></table></div>";
 
   const visiveis = () => $$("#tb-flex input[data-sel-flex]");
@@ -263,7 +263,7 @@ async function mudarFlex(ativar) {
     desenharFlex();
     const falhas = resultados.filter((r) => !r.ok);
     if (resultados.length) avisar((ativar ? "Flex ativado" : "Flex desativado") + " em " + (resultados.length - falhas.length) + " de " + resultados.length + ".");
-    if (falhas.length) $("#resultado-flex").innerHTML = '<div class="nao-achado">Não mudaram (seguem selecionados): ' + falhas.map((f) => esc(f.item_id) + " — " + esc(f.detalhe)).join("<br>") + "</div>";
+    if (falhas.length) $("#resultado-flex").innerHTML = '<div class="nao-achado">Não mudaram (seguem selecionados): ' + falhas.map((f) => esc(f.item_id) + " — " + esc(cap(f.detalhe))).join("<br>") + "</div>";
   }
 }
 

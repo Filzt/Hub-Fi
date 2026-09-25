@@ -56,17 +56,17 @@ async function renderUsuarios() {
     '<form id="form-usuario" class="form-grade" autocomplete="off">' +
     '<label>Nome<input name="nome" required maxlength="80"></label>' +
     '<label>E-mail<input name="email" type="email" required maxlength="254"></label>' +
-    '<label>Função<select name="funcao" id="sel-funcao" required><option value="">escolha…</option>' + opcoes("") + '<option value="__nova">+ Nova função…</option></select></label>' +
+    '<label>Função<select name="funcao" id="sel-funcao" required><option value="">Escolha…</option>' + opcoes("") + '<option value="__nova">+ Nova função…</option></select></label>' +
     '<button type="submit" class="primario">Criar usuário</button></form>' +
-    '<form id="form-funcao-rapida" class="form-funcao" hidden><h4>Nova função</h4><label>Nome da função<input name="nome" maxlength="40" placeholder="ex.: Expedição"></label>' +
+    '<form id="form-funcao-rapida" class="form-funcao" hidden><h4>Nova função</h4><label>Nome da função<input name="nome" maxlength="40" placeholder="Ex.: Expedição"></label>' +
     camposFuncao("rapida", null, Object.keys(NOMES_MODULO)) +
     '<div class="acoes"><button type="submit" class="primario">Criar função</button><button type="button" id="cancelar-funcao-rapida">Cancelar</button></div></form>' +
     '<p class="dica">A pessoa recebe um link para definir a própria senha. Você não vê nem escolhe a senha de ninguém.</p>' +
     '<div id="link-gerado"></div></div>' +
     '<div class="painel"><table><thead><tr><th>Nome</th><th>E-mail</th><th>Função</th><th>Situação</th><th>Último acesso</th><th></th></tr></thead><tbody>' +
-    (usuarios.map((u) => '<tr class="' + (u.ativo ? "" : "inativo") + '"><td><b>' + esc(u.nome) + "</b>" + (u.eu ? ' <span class="tag">você</span>' : "") + "</td><td>" + esc(u.email) +
+    (usuarios.map((u) => '<tr class="' + (u.ativo ? "" : "inativo") + '"><td><b>' + esc(u.nome) + "</b>" + (u.eu ? ' <span class="tag">Você</span>' : "") + "</td><td>" + esc(u.email) +
       '</td><td><select data-usuario-funcao="' + esc(u.id) + '"' + (u.eu ? " disabled title=\"Peça a outro administrador para mudar a sua função\"" : "") + ">" + opcoes(u.funcao) + "</select></td><td>" +
-      (u.ativo ? '<span class="tag ok">ativo</span>' : '<span class="tag err">desativado</span>') + "</td><td>" + esc(u.ultimo_acesso ? dt(u.ultimo_acesso) : u.ultimo_login ? dtIso(u.ultimo_login) : "nunca entrou") +
+      (u.ativo ? '<span class="tag ok">Ativo</span>' : '<span class="tag err">Desativado</span>') + "</td><td>" + esc(u.ultimo_acesso ? dt(u.ultimo_acesso) : u.ultimo_login ? dtIso(u.ultimo_login) : "Nunca entrou") +
       '</td><td class="acoes-linha"><button type="button" data-link-senha="' + esc(u.id) + '" data-email="' + esc(u.email) + '">Link de senha</button>' +
       (u.eu ? "" : '<button type="button" data-ativar="' + esc(u.id) + '" data-ativo="' + (u.ativo ? "1" : "0") + '">' + (u.ativo ? "Desativar" : "Reativar") + "</button>") +
       "</td></tr>").join("") || '<tr><td colspan="6" class="mut">Nenhum usuário.</td></tr>') +
@@ -116,13 +116,13 @@ async function renderFuncoes() {
   const d = await api("/api/admin/funcoes");
   const { funcoes, modulos } = d;
   $("#conteudo").innerHTML =
-    '<div class="painel"><h3>Nova função</h3><form id="form-funcao-nova" class="form-funcao"><label>Nome da função<input name="nome" required maxlength="40" placeholder="ex.: Expedição, Financeiro, Compras"></label>' +
+    '<div class="painel"><h3>Nova função</h3><form id="form-funcao-nova" class="form-funcao"><label>Nome da função<input name="nome" required maxlength="40" placeholder="Ex.: Expedição, Financeiro, Compras"></label>' +
     camposFuncao("nova", null, modulos) + '<div class="acoes"><button type="submit" class="primario">Criar função</button></div></form></div>' +
     funcoes.map((f) => '<div class="painel"><form class="form-funcao" data-funcao="' + esc(f.id) + '">' +
       '<div class="topo-funcao"><label>Nome<input name="nome" required maxlength="40" value="' + esc(f.nome) + '"></label><span class="mut">' +
       f.usuarios + (f.usuarios === 1 ? " usuário" : " usuários") + "</span></div>" + camposFuncao(f.id, f, modulos) +
       '<div class="acoes"><button type="submit" class="primario">Salvar</button>' +
-      (f.id === "administrador" ? '<span class="mut">função fixa: não pode ser apagada</span>' :
+      (f.id === "administrador" ? '<span class="mut">Função fixa: não pode ser apagada</span>' :
         '<button type="button" data-apagar-funcao="' + esc(f.id) + '"' + (f.usuarios ? ' disabled title="Troque a função dos usuários antes"' : "") + ">Apagar</button>") +
       "</div></form></div>").join("");
 
