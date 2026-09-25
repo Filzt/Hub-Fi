@@ -485,3 +485,10 @@ img.marca-simbolo { background: none; padding: 0; border-radius: 9px; box-shadow
   .no-arvore picture img { max-height: 52px; max-width: 150px; }
   .no-arvore picture img.logo-nome { max-height: 40px; max-width: 170px; }
 }
+
+/* canais em breve (Shopee, TikTok Shop): ícone e logo brancos, apagados; no tema claro viram cinza */
+.nav-breve .ico-img { width: 18px; height: 18px; object-fit: contain; opacity: .55; }
+.no-arvore img.logo-breve { max-height: 56px; max-width: 120px; opacity: .6; filter: brightness(0); }
+@media (prefers-color-scheme: dark) { .no-arvore img.logo-breve { filter: none; opacity: .5; } }
+.galho.saude-off { flex: 0 1 210px; }
+.galho.saude-off .no-arvore { min-height: 100%; justify-content: center; }

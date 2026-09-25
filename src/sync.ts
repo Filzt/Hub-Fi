@@ -6,7 +6,7 @@
 //                anúncio; negativo ou produto inativo = 0;
 //   preço      = preço de loja (tabela 0, vigência mais recente) × 1,1236 + 70 no
 //                Clássico — a régua que já estava no ar (a da Base);
-//   nunca mexe em anúncio pausado pelo vendedor (paused_by_seller) nem em
+//   anúncio pausado pelo vendedor (paused_by_seller): só baixa o estoque até o saldo; nunca mexe em
 //   anúncio fora de active/paused.
 
 export type Reguas = Record<string, { fator: number; soma: number }>;
@@ -82,13 +82,20 @@ export function planejar(
 
   for (const a of anuncios) {
     if (a.status !== "active" && a.status !== "paused") { ignorados++; continue; }
-    if (a.sub_status.split(",").map((s) => s.trim()).includes("paused_by_seller")) { ignorados++; continue; }
+    const pausadoPorVoces = a.sub_status.split(",").map((s) => s.trim()).includes("paused_by_seller");
     if (!a.sku) { alertas.push(`${a.item_id} sem SELLER_SKU`); ignorados++; continue; }
     const x = erp.get(a.sku);
     if (!x) { alertas.push(`${a.item_id}: SKU ${a.sku} não existe no Sankhya — não mexo`); ignorados++; continue; }
 
     const primeiro = (porSku.get(a.sku) ?? [a.item_id]).slice().sort()[0] === a.item_id;
     const disp = !x.ativo ? 0 : primeiro ? Math.max(0, Math.floor(x.disp)) : 0;
+    // Pausado por vocês: só BAIXA o estoque até o saldo do Sankhya (nunca sobe, não mexe no preço,
+    // não reativa). Sem isso, reativar o anúncio vendia unidade que não existe (CEL4584, 25/09/2026).
+    if (pausadoPorVoces) {
+      if (a.qtd_ml > disp) acoes.push({ item_id: a.item_id, sku: a.sku, qtd_de: a.qtd_ml, qtd_para: disp, preco_de: a.preco_ml, preco_para: null, motivo: (disp === 0 ? "zerar" : "baixar") + ", pausado por vocês" });
+      else ignorados++;
+      continue;
+    }
     const qtdPara = disp !== a.qtd_ml ? disp : null;
 
     let precoPara: number | null = null;

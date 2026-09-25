@@ -82,8 +82,8 @@ export function montarCatalogo(
     p.canais.ml.anuncios.push({
       item_id: a.item_id, status: a.status, sub_status: a.sub_status, qtd_ml: a.qtd_ml, preco_ml: a.preco_ml,
       listing_type: a.listing_type, preco_alvo: alvo,
-      // Mesma regra do planejador: pausado por vocês não é divergência de estoque.
-      div_qtd: p.disp != null && !pausadoPorVoces(a) && p.disp !== a.qtd_ml,
+            // Pausado por vocês só é divergência se o ML tem mais do que o Sankhya (o hub só baixa).
+      div_qtd: p.disp != null && (pausadoPorVoces(a) ? a.qtd_ml > p.disp : p.disp !== a.qtd_ml),
       div_preco: alvo != null && (p.disp ?? 0) > 0 && a.preco_ml != null && Math.abs(alvo - a.preco_ml) >= 0.01,
       ultima_acao: a.ultima_acao ?? null, acao_em: a.acao_em ?? null, flex: a.flex ?? null,
     });

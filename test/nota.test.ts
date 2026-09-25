@@ -295,3 +295,23 @@ test("webhook: só aceita resource no formato exato do tópico (auditoria F1)", 
   assert.equal(ok("post_purchase", "/post-purchase/v1/claims/1"), false);
   assert.equal(ok("items", "/items/MLB123"), false);
 });
+
+test("sync: pausado por vocês só baixa o estoque até o saldo (nunca sobe, nunca mexe no preço)", async () => {
+  const { planejar } = await import("../src/sync.ts");
+  const p = (id: string, sku: string, qtd: number) =>
+    ({ item_id: id, sku, status: "paused", sub_status: "paused_by_seller", qtd_ml: qtd, preco_ml: 631.8, listing_type: "gold_special" });
+  const erp = new Map([
+    ["J7", { disp: 0, ativo: true, preco_loja: 100 }],
+    ["S23", { disp: 1, ativo: true, preco_loja: 5000 }],
+    ["A15", { disp: 5, ativo: true, preco_loja: 800 }],
+    ["OFF", { disp: 4, ativo: false, preco_loja: 800 }],
+  ]);
+  const { acoes } = planejar([p("MLB1", "J7", 3), p("MLB2", "S23", 3), p("MLB3", "A15", 0), p("MLB4", "S23", 0), p("MLB5", "OFF", 2)], erp);
+  const por = Object.fromEntries(acoes.map((a) => [a.item_id, a]));
+  assert.equal(por.MLB1.qtd_para, 0); assert.match(por.MLB1.motivo, /zerar, pausado/);
+  assert.equal(por.MLB2.qtd_para, 1); assert.match(por.MLB2.motivo, /baixar, pausado/);
+  assert.equal(por.MLB1.preco_para, null, "não mexe no preço");
+  assert.equal(por.MLB3, undefined, "com saldo e ML em 0: não repõe anúncio pausado");
+  assert.equal(por.MLB4, undefined);
+  assert.equal(por.MLB5.qtd_para, 0, "produto inativo no Sankhya também zera");
+});

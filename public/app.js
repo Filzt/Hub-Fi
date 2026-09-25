@@ -870,6 +870,8 @@ async function renderArvore() {
       }),
     },
     { saude: "off", html: noArvore({ titulo: "Nuvemshop", saude: "off", classe: "breve" }) },
+    { saude: "off", html: noArvore({ logo: "/logos/shopee-branco.png", marca: "logo-breve", titulo: "Shopee", saude: "off", classe: "breve" }) },
+    { saude: "off", html: noArvore({ logo: "/logos/tiktokshop-branco.png", marca: "logo-breve", titulo: "TikTok Shop", saude: "off", classe: "breve" }) },
   ];
   $("#conteudo").innerHTML =
     '<div class="painel"><div class="arvore">' +
