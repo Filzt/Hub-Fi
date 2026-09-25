@@ -15,7 +15,7 @@ export const MODULOS = ["pedidos", "expedicao", "produtos", "publicacao", "preci
 export type Modulo = (typeof MODULOS)[number];
 
 export interface Quem {
-  tipo: "sistema" | "usuario";
+  tipo: "sistema" | "scripts" | "usuario";
   id: string; // sub do JWT ou "sistema"
   email: string;
   nome: string;
@@ -92,7 +92,9 @@ export function moduloDaRota(metodo: string, p: string): Modulo | "admin" | "sis
 }
 
 export function pode(quem: Quem, exigido: Modulo | "admin" | "sistema" | null): boolean {
-  if (quem.tipo === "sistema") return true;
+  // Token dos scripts: só o token do ML. ADMIN_TOKEN: tudo, MENOS o token do ML (auditoria F2).
+  if (quem.tipo === "scripts") return exigido === "sistema";
+  if (quem.tipo === "sistema") return exigido !== "sistema";
   if (exigido === null) return true;
   if (exigido === "sistema") return false;
   if (quem.admin) return true;

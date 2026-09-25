@@ -13,3 +13,7 @@ node_modules/
 *.xml
 *.pdf
 *.zpl
+
+# bytecode Python (auditoria F6)
+__pycache__/
+*.pyc

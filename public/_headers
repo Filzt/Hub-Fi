@@ -1,0 +1,14 @@
+# Cabeçalhos de segurança do painel (auditoria F5, 25/09/2026).
+# Vale só para os arquivos estáticos; as respostas do Worker (/api, /config, webhook)
+# recebem os seus no código (src/index.ts, json()). Doc: Workers Static Assets → Headers.
+#
+# CSP: scripts só do próprio SkyHub e do supabase-js (jsdelivr, com SRI no index.html);
+# conexão só com o SkyHub e o Supabase do login; imagens do ML (fotos das fichas);
+# frame/object blob: para o PDF da etiqueta impresso num iframe; style-src-attr porque
+# o painel usa alguns style="" em atributo (nunca <style> nem script inline).
+/*
+  Content-Security-Policy: default-src 'none'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self'; style-src-attr 'unsafe-inline'; img-src 'self' data: https://http2.mlstatic.com; connect-src 'self' https://eqfdpixjonvkmhipzrcn.supabase.co; frame-src 'self' blob:; object-src 'self' blob:; base-uri 'none'; form-action 'self'; frame-ancestors 'none'
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer
+  X-Frame-Options: DENY
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()

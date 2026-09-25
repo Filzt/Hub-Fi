@@ -45,11 +45,10 @@ export const TIMEOUT_MS = {
   sankhyaEscrita: 90_000, // gateway processa até 2 min; incluirNota pode demorar
 } as const;
 
-// Tópicos do ML que o webhook aceita. Só orders_v2 é processado nesta fase;
-// os demais ficam registrados para as próximas (NF, etiqueta, reclamação).
-export const TOPICOS_ACEITOS = new Set([
-  "orders_v2",
-  "shipments",
-  "invoices",
-  "post_purchase",
+// Tópicos do ML que o webhook aceita, com o formato exato do resource (auditoria F1:
+// resource fora do padrão é descartado sem virar evento). invoices e post_purchase
+// saíram: eram registrados e nunca processados.
+export const TOPICOS_ACEITOS = new Map<string, RegExp>([
+  ["orders_v2", /^\/orders\/\d{6,20}$/],
+  ["shipments", /^\/shipments\/\d{6,20}$/],
 ]);

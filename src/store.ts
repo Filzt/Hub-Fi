@@ -361,13 +361,14 @@ export class Store extends DurableObject<Env> {
     return [...new Set([...agendados, ...ids])].slice(0, limite);
   }
 
-  /** Pedido (pack/order) e chave da NF de cada envio, para a faixa da NF na etiqueta. */
-  pedidosDosEnvios(ids: string[]): Array<{ shipment_id: string; chave: string | null; fiscal_key: string | null }> {
+  /** Pedido (pack/order), chave da NF e situação da venda de cada envio (faixa da NF e trava de cancelado). */
+  pedidosDosEnvios(ids: string[]): Array<{ shipment_id: string; chave: string | null; fiscal_key: string | null; situacao: string | null; status_ml: string | null; envio_status: string | null }> {
     if (!ids.length) return [];
     return this.sql
-      .exec<{ shipment_id: string; chave: string | null; fiscal_key: string | null }>(
-        `SELECT e.shipment_id, COALESCE(n.chave, e.chave) chave, n.fiscal_key
+      .exec<{ shipment_id: string; chave: string | null; fiscal_key: string | null; situacao: string | null; status_ml: string | null; envio_status: string | null }>(
+        `SELECT e.shipment_id, COALESCE(n.chave, e.chave) chave, n.fiscal_key, p.situacao, p.status_ml, e.status envio_status
          FROM envios e LEFT JOIN nfs n ON n.shipment_id = e.shipment_id
+         LEFT JOIN pedidos p ON p.chave = COALESCE(n.chave, e.chave)
          WHERE e.shipment_id IN (${ids.map(() => "?").join(",")})`,
         ...ids,
       )
@@ -702,8 +703,42 @@ export class Store extends DurableObject<Env> {
     );
   }
 
-  reabrirEvento(id: number): void {
-    this.sql.exec(`UPDATE eventos SET status='pendente', tentativas=0, proximo_em=?, erro=NULL WHERE id=?`, Date.now(), id);
+  /** Só evento com erro volta para a fila (auditoria F7). true = reaberto. */
+  reabrirEvento(id: number): boolean {
+    const r = this.sql.exec(`UPDATE eventos SET status='pendente', tentativas=0, proximo_em=?, erro=NULL WHERE id=? AND status='erro'`, Date.now(), id);
+    return r.rowsWritten > 0;
+  }
+
+  /** Notificações registradas no último intervalo (freio de processamento imediato no webhook). */
+  eventosRecentes(ms: number): number {
+    return this.sql.exec<{ n: number }>(`SELECT COUNT(*) n FROM eventos WHERE recebido_em >= ?`, Date.now() - ms).one().n;
+  }
+
+  /** Retenção (auditoria F1): eventos concluídos com mais de 30 dias saem. */
+  limparEventosAntigos(): number {
+    const r = this.sql.exec(`DELETE FROM eventos WHERE status IN ('ok','ignorado') AND recebido_em < ?`, Date.now() - 30 * 86_400_000);
+    return r.rowsWritten;
+  }
+
+  /**
+   * Contador diário (8 dias) no meta, no lugar de logar o corpo da notificação:
+   * "descartes" (conta/app errados) e "webhook" (por rota: segredo × legado).
+   */
+  contar(grupo: "descartes" | "webhook", motivo: string): void {
+    const dia = new Date(Date.now() - 3 * 3_600_000).toISOString().slice(0, 10);
+    const atual = JSON.parse(this.meta(grupo) ?? "{}") as Record<string, Record<string, number>>;
+    for (const d of Object.keys(atual)) if (d < new Date(Date.now() - 8 * 86_400_000).toISOString().slice(0, 10)) delete atual[d];
+    atual[dia] = { ...(atual[dia] ?? {}), [motivo]: (atual[dia]?.[motivo] ?? 0) + 1 };
+    this.setMeta(grupo, JSON.stringify(atual));
+  }
+
+  contadores(grupo: "descartes" | "webhook"): Record<string, Record<string, number>> {
+    return JSON.parse(this.meta(grupo) ?? "{}");
+  }
+
+  /** Confirmação manual só vale para pedido que o SkyHub gravou (auditoria F4). */
+  pedidoGravadoComNunota(nunota: number): boolean {
+    return this.sql.exec<{ n: number }>(`SELECT COUNT(*) n FROM pedidos WHERE nunota = ? AND gravacao = 'gravado'`, nunota).one().n > 0;
   }
 
   listarEventos(status: string | null, limite = 200): Evento[] {

@@ -283,3 +283,15 @@ test("sync: aborta leitura suspeita e zeragem em massa", async () => {
   assert.match(motivoParaAbortar(z(31), { skusPedidos: 400, skusLidos: 400, comSaldo: 200, comSaldoAnterior: 210, maxZerar: 30 })!, /zerados/);
   assert.match(motivoParaAbortar(z(0), { skusPedidos: 400, skusLidos: 400, comSaldo: 50, comSaldoAnterior: 210, maxZerar: 30 })!, /caíram/);
 });
+
+test("webhook: só aceita resource no formato exato do tópico (auditoria F1)", async () => {
+  const { TOPICOS_ACEITOS } = await import("../src/config.ts");
+  const ok = (topic: string, r: string) => !!TOPICOS_ACEITOS.get(topic)?.test(r);
+  assert.equal(ok("orders_v2", "/orders/2000018637506924"), true);
+  assert.equal(ok("shipments", "/shipments/48099041202"), true);
+  assert.equal(ok("orders_v2", "/orders/2000018637506924/../../users"), false);
+  assert.equal(ok("orders_v2", "/orders/123"), false);
+  assert.equal(ok("shipments", "/orders/2000018637506924"), false);
+  assert.equal(ok("post_purchase", "/post-purchase/v1/claims/1"), false);
+  assert.equal(ok("items", "/items/MLB123"), false);
+});

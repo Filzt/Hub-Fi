@@ -9,6 +9,7 @@
 // Baixar a etiqueta costuma marcar o envio como "printed" no ML.
 
 import { despachoDoEnvio } from "./despacho.ts";
+import { checarBipe } from "./expedicao.ts";
 import { meliBaixar, meliGet } from "./meli.ts";
 import { sqlTexto } from "./nota.ts";
 import { type FaixaNf, formatarEmissao, juntarEtiquetas } from "./recorte.ts";
@@ -80,6 +81,25 @@ export async function baixarEtiquetas(env: Env, ids: string[], formato: "pdf" | 
   };
 
   const store = storeStub(env);
+  // Auditoria F7: a checagem de cancelamento não pode morar só no painel. Pela situação que
+  // o SkyHub guarda (webhook orders_v2: qualquer order cancelada do pack = "cancelado") e,
+  // quando o pedido não está no SkyHub, ao vivo no ML — a mesma checagem do bipe.
+  const situacao = await store.pedidosDosEnvios(limpos);
+  const conhecidos = new Map(situacao.map((s) => [s.shipment_id, s]));
+  const cancelados: string[] = [];
+  for (const id of limpos) {
+    const s = conhecidos.get(id);
+    if (s && s.situacao) {
+      if (s.situacao === "cancelado" || s.status_ml === "cancelled" || s.envio_status === "cancelled") cancelados.push(`${id} (pedido ${s.chave})`);
+      continue;
+    }
+    const c = await checarBipe(env, id);
+    if (c.cancelado) cancelados.push(`${id} (pedido ${c.pedido ?? "?"}: ${c.motivo})`);
+  }
+  if (cancelados.length) {
+    await store.log("aviso", null, `impressão recusada: venda cancelada — ${cancelados.join(", ")}`);
+    throw new ErroDefinitivo(`venda cancelada, não imprima: ${cancelados.join(", ")}`);
+  }
   let corpo: Uint8Array;
   let tipo: string;
   if (formato === "pdf") {

@@ -594,7 +594,7 @@ async function renderPrecificacao(sub) {
     '<p style="margin:0 0 10px"><a href="#precificacao">← Marketplaces</a></p><div class="painel"><h3>Réguas vigentes — Mercado Livre</h3><p class="mut" style="margin:10px 12px 0">Preço no ML = preço de loja (tabela 0 do Sankhya) × multiplicador + acréscimo. ' +
     "Vale para os anúncios com saldo. Mudanças acima de 25% num anúncio não são aplicadas automaticamente. Depois de salvar, o ML é atualizado em até ~2 min (15 anúncios por rodada).</p>" +
     '<div class="reguas">' + Object.keys(TIPOS).map(cartao).join("") + "</div>" +
-    '<div class="form-linha"><label>Quem está alterando<input id="resp" maxlength="60" placeholder="seu nome"></label>' +
+    '<div class="form-linha"><span class="mut">Fica registrado com o seu login (' + esc(eu ? eu.email : "") + ").</span>" +
     '<label style="flex:1;min-width:220px">Motivo<input id="motivo" maxlength="200" placeholder="ex.: campanha, custo de frete"></label>' +
     '<button type="button" id="simular">Simular impacto</button><button type="button" id="salvar" class="primario">Salvar régua</button></div>' +
     '<div id="simulacao" style="padding:0 12px 12px"></div></div>' +
@@ -616,12 +616,10 @@ async function renderPrecificacao(sub) {
         s.exemplos.map((x) => "<tr><td>" + esc(x.item_id) + "</td><td>" + esc(x.sku) + "</td><td class='n'>" + brl(x.de) + "</td><td class='n'>" + brl(x.para) + "</td></tr>").join("") + "</tbody></table>" : "");
   };
   $("#salvar").onclick = async (e) => {
-    const responsavel = $("#resp").value.trim();
-    if (!responsavel) throw new Error("Informe quem está alterando.");
     const s = await post("/api/reguas/simular", { reguas: ler() });
     if (!confirm("Salvar a régua? " + s.mudam + " anúncio(s) mudam de preço no ML (" + s.sobem + " sobem, " + s.descem + " descem).")) return;
     e.target.disabled = true;
-    await post("/api/reguas", { reguas: ler(), responsavel, motivo: $("#motivo").value.trim() });
+    await post("/api/reguas", { reguas: ler(), motivo: $("#motivo").value.trim() });
     navegar();
   };
 }

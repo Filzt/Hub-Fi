@@ -22,6 +22,9 @@ export interface Env {
   SANKHYA_XTOKEN: string;
   ADMIN_TOKEN: string;
   SUPABASE_SECRET_KEY: string; // só no Worker: cria usuário e gera link de senha
+  WEBHOOK_SECRET: string; // segmento secreto da URL do webhook (/ml/webhook/<segredo>)
+  SCRIPTS_TOKEN: string; // só para GET /api/meli/access-token (scripts locais)
+  WEBHOOK_LEGADO: string; // "aberto" enquanto o DevCenter usa /ml/webhook sem segredo; "fechado" depois
 
   MELI_TOKEN: DurableObjectNamespace<MeliToken>;
   STORE: DurableObjectNamespace<Store>;

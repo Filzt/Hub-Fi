@@ -51,9 +51,13 @@ SUPABASE_URL = "https://eqfdpixjonvkmhipzrcn.supabase.co"
 SUPABASE_PUBLISHABLE_KEY = "sb_publishable_FWiqNk2uNX3SM00SVHCxag_QrFkVaQ_"
 ADMIN_INICIAL = "filipe@gruposkytech.com.br"
 PAINEL_URL = "https://skyhub.olivera-kaique2004.workers.dev"
+# Auditoria F1: o ML deve notificar em /ml/webhook/<WEBHOOK_SECRET>. Enquanto o DevCenter
+# não for trocado, a rota antiga segue aberta (com os filtros novos); depois vira "fechado".
+WEBHOOK_LEGADO = "aberto"
 
 # Segredos (nunca aqui — `npx wrangler secret put <NOME>` ou painel da Cloudflare):
 #   MELI_CLIENT_ID, MELI_CLIENT_SECRET
 #   SANKHYA_CLIENT_ID, SANKHYA_CLIENT_SECRET, SANKHYA_XTOKEN
 #   SUPABASE_SECRET_KEY (chave sb_secret do projeto do login)
+#   WEBHOOK_SECRET (URL do webhook), SCRIPTS_TOKEN (só o token do ML para os scripts)
 #   ADMIN_TOKEN  (protege /api e o painel)

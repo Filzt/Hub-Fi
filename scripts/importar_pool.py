@@ -18,7 +18,7 @@ from pathlib import Path
 
 import keyring
 
-URL = "https://skyhub.olivera-kaique2004.workers.dev"
+URL = (keyring.get_password("fi-ecommerce", "SKYHUB_URL") or "").strip().rstrip("/")  # do cofre (auditoria F3)
 PADRAO = Path(r"C:\Users\filip\OneDrive\Área de Trabalho\Fi-Ecommerce\skyline\projetos\ml-catalogo\2-saidas\11_pool_fichas.csv")
 CAMPOS = ("pdp", "nome", "grau", "cor", "capacidade", "marca", "modelo", "status", "parent_id", "pdp_tradicional")
 

@@ -22,15 +22,25 @@ export { Store } from "./store.ts";
 const json = (dados: unknown, status = 200) =>
   new Response(JSON.stringify(dados), {
     status,
-    headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" },
+    headers: {
+      "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store",
+      "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer",
+    },
   });
 
-/** Comparação em tempo constante do ADMIN_TOKEN (hash dos dois lados). */
-async function ehTokenDoSistema(recebido: string, env: Env): Promise<boolean> {
-  if (!env.ADMIN_TOKEN || !recebido) return false;
+/** Comparação em tempo constante de dois segredos (hash dos dois lados). */
+async function mesmoSegredo(recebido: string, esperado: string | undefined): Promise<boolean> {
+  if (!esperado || !recebido) return false;
   const h = async (s: string) => new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s)));
-  const [a, b] = await Promise.all([h(recebido), h(env.ADMIN_TOKEN)]);
+  const [a, b] = await Promise.all([h(recebido), h(esperado)]);
   return crypto.subtle.timingSafeEqual(a, b);
+}
+/** Segredo configurado com menos de 32 caracteres não vale (auditoria F3): recusa em vez de aceitar fraco. */
+const forte = (s: string | undefined) => !!s && s.length >= 32;
+
+/** ADMIN_TOKEN (scripts de operação). Não vale se for fraco. */
+async function ehTokenDoSistema(recebido: string, env: Env): Promise<boolean> {
+  return forte(env.ADMIN_TOKEN) && (await mesmoSegredo(recebido, env.ADMIN_TOKEN));
 }
 
 /**
@@ -40,6 +50,10 @@ async function ehTokenDoSistema(recebido: string, env: Env): Promise<boolean> {
 async function identificar(req: Request, env: Env): Promise<{ quem: Quem } | { motivo: string; status: number }> {
   const recebido = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "").trim();
   if (!recebido) return { motivo: "faça login", status: 401 };
+  // Token dos scripts: só serve para pegar o token do ML (auditoria F2) — e nada mais.
+  if (forte(env.SCRIPTS_TOKEN) && (await mesmoSegredo(recebido, env.SCRIPTS_TOKEN))) {
+    return { quem: { tipo: "scripts", id: "scripts", email: "scripts", nome: "Scripts", funcao: null, admin: false, modulos: [] } };
+  }
   if (await ehTokenDoSistema(recebido, env)) {
     return { quem: { tipo: "sistema", id: "sistema", email: "sistema", nome: "Sistema", funcao: null, admin: true, modulos: [] } };
   }
@@ -63,7 +77,11 @@ async function identificar(req: Request, env: Env): Promise<{ quem: Quem } | { m
   };
 }
 
-async function webhook(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+// Acima disso por minuto, o webhook só registra e o cron processa (auditoria F1: um flood
+// forjado não vira uma análise completa por notificação).
+const WEBHOOK_PROCESSA_POR_MINUTO = 30;
+
+async function webhook(req: Request, env: Env, ctx: ExecutionContext, via: "segredo" | "legado"): Promise<Response> {
   // O ML exige 200 em até 500 ms, senão desativa o tópico: registra e processa depois.
   // Nunca confia no payload — ele só diz QUAL recurso reler na API.
   let n: { topic?: string; resource?: string; user_id?: number | string; application_id?: number | string };
@@ -73,13 +91,18 @@ async function webhook(req: Request, env: Env, ctx: ExecutionContext): Promise<R
     return json({ ok: false, motivo: "json inválido" }, 400);
   }
   const store = storeStub(env);
-  const deOutraConta = String(n.user_id ?? "") !== env.MELI_USER_ID;
-  const deOutroApp = n.application_id != null && String(n.application_id) !== env.MELI_CLIENT_ID;
-  if (!n.topic || !n.resource || !TOPICOS_ACEITOS.has(n.topic) || deOutraConta || deOutroApp) {
-    ctx.waitUntil(store.log("aviso", null, `notificação descartada: ${JSON.stringify(n).slice(0, 300)}`));
+  const formato = n.topic ? TOPICOS_ACEITOS.get(n.topic) : undefined;
+  const daConta = String(n.user_id ?? "") === env.MELI_USER_ID;
+  const doApp = n.application_id != null && String(n.application_id) === env.MELI_CLIENT_ID; // obrigatório
+  if (!formato || !n.resource || !formato.test(n.resource) || !daConta || !doApp) {
+    // Tópico que não usamos (items, price_suggestion…) cai aqui em silêncio; o corpo não vai
+    // para o log (ele empurrava o log legítimo para fora). Conta/app errados ficam só contados.
+    if (!daConta || !doApp) ctx.waitUntil(store.contar("descartes", !daConta ? "outra_conta" : "outro_app"));
     return json({ ok: true, ignorado: true }); // 200 para o ML não reenviar lixo
   }
-  const id = await store.registrarEvento(n.topic, n.resource);
+  const id = await store.registrarEvento(n.topic!, n.resource);
+  ctx.waitUntil(store.contar("webhook", via)); // mostra quando o ML passou a usar a URL com segredo
+  if ((await store.eventosRecentes(60_000)) > WEBHOOK_PROCESSA_POR_MINUTO) return json({ ok: true, adiado: true });
   ctx.waitUntil(
     (async () => {
       const ev = await store.evento(id);
@@ -100,6 +123,17 @@ async function rotaApi(req: Request, env: Env, url: URL): Promise<Response> {
   // Rastro de quem fez cada ação (a leitura não entra, para não encher o log).
   if (req.method !== "GET" && quem.tipo === "usuario") await store.log("info", null, `${req.method} ${p} por ${quem.email}`);
 
+  if (req.method === "GET" && p === "/api/admin/config") {
+    const nomes = ["MELI_CLIENT_ID", "MELI_CLIENT_SECRET", "SANKHYA_CLIENT_ID", "SANKHYA_CLIENT_SECRET", "SANKHYA_XTOKEN",
+      "ADMIN_TOKEN", "SUPABASE_SECRET_KEY", "WEBHOOK_SECRET", "SCRIPTS_TOKEN"] as const;
+    return json({
+      modo: env.MODO, webhookLegado: env.WEBHOOK_LEGADO,
+      secrets: Object.fromEntries(nomes.map((n) => [n, Boolean(env[n])])),
+      fortes: Object.fromEntries((["ADMIN_TOKEN", "WEBHOOK_SECRET", "SCRIPTS_TOKEN"] as const).map((n) => [n, forte(env[n])])),
+      descartes: await store.contadores("descartes"),
+      webhookPorRota: await store.contadores("webhook"),
+    });
+  }
   if (req.method === "GET" && p === "/api/eu") {
     return json({ id: quem.id, email: quem.email, nome: quem.nome, funcao: quem.funcao, admin: quem.admin, modulos: quem.admin ? MODULOS_TODOS : quem.modulos });
   }
@@ -137,6 +171,9 @@ async function rotaApi(req: Request, env: Env, url: URL): Promise<Response> {
     }
   }
   r = m(/^\/api\/notas\/(\d+)\/confirmar$/);
+  if (req.method === "POST" && r && !(await store.pedidoGravadoComNunota(Number(r[1])))) {
+    return json({ erro: `NUNOTA ${r[1]} não foi gravado pelo SkyHub — confirme pelo Sankhya` }, 404);
+  }
   if (req.method === "POST" && r) {
     const res = await confirmarPedidoErp(env, Number(r[1]));
     await store.log(res.ok ? "info" : "aviso", null, `confirmar NUNOTA ${r[1]}: ${res.ok ? "ok (L)" : res.motivo}`);
@@ -193,7 +230,8 @@ async function rotaApi(req: Request, env: Env, url: URL): Promise<Response> {
     const corpo = (await req.json().catch(() => ({}))) as { reguas?: unknown; responsavel?: string; motivo?: string };
     const v = validarReguas(corpo.reguas);
     if (!v.ok) return json({ erro: v.erro }, 400);
-    const responsavel = String(corpo.responsavel ?? "").trim().slice(0, 60);
+    // Responsável vem do login, não do corpo (auditoria F2: o texto livre podia ser forjado).
+    const responsavel = quem.tipo === "usuario" ? quem.email : String(corpo.responsavel ?? "sistema").trim().slice(0, 60) || "sistema";
     const motivo = String(corpo.motivo ?? "").trim().slice(0, 200);
     if (!responsavel) return json({ erro: "informe quem está alterando" }, 400);
     const anterior = await reguasVigentes(env);
@@ -309,7 +347,7 @@ async function rotaApi(req: Request, env: Env, url: URL): Promise<Response> {
   }
   r = m(/^\/api\/eventos\/(\d+)\/reabrir$/);
   if (req.method === "POST" && r) {
-    await store.reabrirEvento(Number(r[1]));
+    if (!(await store.reabrirEvento(Number(r[1])))) return json({ erro: "só dá para reabrir evento com erro" }, 409);
     return json({ ok: true });
   }
   if (req.method === "GET" && p === "/api/log") {
@@ -347,20 +385,22 @@ export default {
   async fetch(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(req.url);
     try {
-      if (url.pathname === "/ml/webhook" && req.method === "POST") return await webhook(req, env, ctx);
+      if (req.method === "POST" && url.pathname.startsWith("/ml/webhook/")) {
+        const segredo = url.pathname.slice("/ml/webhook/".length);
+        if (!forte(env.WEBHOOK_SECRET) || !(await mesmoSegredo(segredo, env.WEBHOOK_SECRET))) return json({ erro: "não encontrado" }, 404);
+        return await webhook(req, env, ctx, "segredo");
+      }
+      if (url.pathname === "/ml/webhook" && req.method === "POST") {
+        if (env.WEBHOOK_LEGADO !== "aberto") return json({ erro: "não encontrado" }, 404);
+        return await webhook(req, env, ctx, "legado");
+      }
       if (url.pathname === "/config" && req.method === "GET") {
         // Diagnóstico público: só diz QUAIS secrets existem e um prefixo do hash do
         // ADMIN_TOKEN (32 bits de um SHA-256) para conferir com o cofre. Nenhum valor.
-        const nomes = ["MELI_CLIENT_ID", "MELI_CLIENT_SECRET", "SANKHYA_CLIENT_ID",
-          "SANKHYA_CLIENT_SECRET", "SANKHYA_XTOKEN", "ADMIN_TOKEN", "SUPABASE_SECRET_KEY"] as const;
-        const presentes = Object.fromEntries(nomes.map((n) => [n, Boolean(env[n])]));
-        const hash = env.ADMIN_TOKEN
-          ? [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(env.ADMIN_TOKEN)))]
-              .slice(0, 4).map((b) => b.toString(16).padStart(2, "0")).join("")
-          : null;
-        // URL e chave PUBLICÁVEL do Supabase são públicas por natureza (o login do painel usa).
-        return json({ modo: env.MODO, secrets: presentes, adminTokenSha256Prefixo: hash,
-          supabase: { url: env.SUPABASE_URL, chavePublicavel: env.SUPABASE_PUBLISHABLE_KEY } });
+        // Público só o que a tela de login precisa: URL e chave PUBLICÁVEL do Supabase, que são
+        // públicas por natureza. Nomes de secrets, modo e hash saíram (auditoria F3) — o
+        // diagnóstico agora é GET /api/admin/config, com login de administrador.
+        return json({ supabase: { url: env.SUPABASE_URL, chavePublicavel: env.SUPABASE_PUBLISHABLE_KEY } });
       }
       if (url.pathname.startsWith("/api/")) return await rotaApi(req, env, url);
       if (url.pathname === "/painel") return Response.redirect(new URL("/", url).toString(), 302);
@@ -388,6 +428,14 @@ export default {
     } catch (e) {
       await store.log("erro", null, `sincronização de estoque/preço falhou: ${(e as Error).message}`);
     }
+    // Retenção de eventos (auditoria F1): 1x por dia apaga os concluídos com mais de 30 dias.
+    try {
+      if (Date.now() - Number((await store.meta("limpeza_eventos_em")) ?? 0) > 86_400_000) {
+        const n = await store.limparEventosAntigos();
+        await store.setMeta("limpeza_eventos_em", String(Date.now()));
+        if (n) await store.log("info", null, `retenção: ${n} eventos concluídos com mais de 30 dias apagados`);
+      }
+    } catch (e) { await store.log("aviso", null, `retenção de eventos: ${(e as Error).message}`); }
     // Publicação pelo SKU: candidatos do Sankhya 1x por hora; casamento, fichas e auditoria
     // aos poucos a cada rodada (poucos subrequests — o resto do cron já usa bastante).
     try {

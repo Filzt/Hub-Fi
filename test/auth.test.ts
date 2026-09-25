@@ -50,7 +50,12 @@ test("permissão: função só vê os módulos dela; admin vê tudo; rota descon
   assert.equal(pode(exp, moduloDaRota("GET", "/api/rota-nova")), false);
   assert.equal(pode(adm, moduloDaRota("GET", "/api/admin/usuarios")), true);
   assert.equal(pode(adm, moduloDaRota("GET", "/api/meli/access-token")), false, "token do ML só para scripts");
-  assert.equal(pode({ ...adm, tipo: "sistema" }, moduloDaRota("GET", "/api/meli/access-token")), true);
+  // Auditoria F2: ADMIN_TOKEN faz tudo MENOS pegar o token do ML; o token dos scripts, só isso.
+  assert.equal(pode({ ...adm, tipo: "sistema" }, moduloDaRota("GET", "/api/meli/access-token")), false);
+  assert.equal(pode({ ...adm, tipo: "sistema" }, moduloDaRota("POST", "/api/pedidos/1/gravar")), true);
+  assert.equal(pode({ ...exp, tipo: "scripts" }, moduloDaRota("GET", "/api/meli/access-token")), true);
+  assert.equal(pode({ ...exp, tipo: "scripts" }, moduloDaRota("GET", "/api/pedidos")), false);
+  assert.equal(pode({ ...exp, tipo: "scripts" }, moduloDaRota("GET", "/api/admin/usuarios")), false);
   assert.equal(pode(exp, moduloDaRota("GET", "/api/eu")), true);
 });
 

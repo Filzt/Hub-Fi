@@ -29,7 +29,7 @@ import keyring
 
 SERVICO = "fi-ecommerce"
 RAIZ = Path(__file__).resolve().parents[1]
-URL_WORKER = "https://skyhub.olivera-kaique2004.workers.dev"
+URL_WORKER = (keyring.get_password(SERVICO, "SKYHUB_URL") or "").strip().rstrip("/")  # do cofre, não fixo no código
 
 MAPA = [  # secret no Worker -> chave no cofre
     ("MELI_CLIENT_ID", "MELI_CLIENT_ID"),
@@ -39,6 +39,8 @@ MAPA = [  # secret no Worker -> chave no cofre
     ("SANKHYA_XTOKEN", "SANKHYA_SKYLINE_XTOKEN"),
     ("ADMIN_TOKEN", "SKYHUB_ADMIN_TOKEN"),
     ("SUPABASE_SECRET_KEY", "SUPABASE_SKYHUB_SECRET_KEY"),  # login do painel (25/09/2026)
+    ("WEBHOOK_SECRET", "SKYHUB_WEBHOOK_SECRET"),  # segmento secreto da URL do webhook (auditoria F1)
+    ("SCRIPTS_TOKEN", "SKYHUB_SCRIPTS_TOKEN"),  # só /api/meli/access-token (auditoria F2)
 ]
 
 
@@ -82,10 +84,13 @@ def main() -> int:
             print("   ", (r.stderr or r.stdout).strip()[-400:])
             return 1
 
-    req = urllib.request.Request(f"{URL_WORKER}/config", headers={"User-Agent": "skyhub-secrets"})  # UA padrão do urllib leva 403
+    # Diagnóstico com o token de operação (o /config público não lista mais secrets — auditoria F3).
+    admin = (keyring.get_password(SERVICO, "SKYHUB_ADMIN_TOKEN") or "").strip()
+    req = urllib.request.Request(f"{URL_WORKER}/api/admin/config", headers={
+        "User-Agent": "skyhub-secrets", "Authorization": f"Bearer {admin}"})  # UA padrão do urllib leva 403
     with urllib.request.urlopen(req, timeout=30) as resp:
         cfg = json.load(resp)
-    print("\nWorker /config:", json.dumps(cfg["secrets"]))
+    print("\nWorker /api/admin/config:", json.dumps(cfg["secrets"]))
     return 0 if all(cfg["secrets"].values()) else 1
 
 
