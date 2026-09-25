@@ -170,3 +170,9 @@ tr.foco td { background: var(--ok-bg); }
 th.sel, td.sel { width: 36px; text-align: center; }
 td.sel input, th.sel input { width: 18px; height: 18px; cursor: pointer; }
 tr.sel td { background: var(--info-bg); }
+
+/* Expedição: contagem nos submenus */
+.submenu a { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.qtd { min-width: 22px; padding: 1px 7px; border-radius: 10px; background: #ffffff1f; color: var(--lat-tx); font-size: 12px; font-weight: 600; text-align: center; }
+.qtd:empty { display: none; }
+.qtd.alta { background: var(--info); color: #fff; }

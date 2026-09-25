@@ -47,7 +47,7 @@ const MODULOS = {
 function rota() {
   const [mod, sub] = (location.hash.replace(/^#/, "") || "pedidos").split("/");
   const m = MODULOS[mod] ? mod : "pedidos";
-  return { mod: m, sub: sub || (m === "integracao" ? "visao" : "") };
+  return { mod: m, sub: sub || (m === "integracao" ? "visao" : m === "expedicao" ? "imprimir" : "") };
 }
 
 async function navegar() {
@@ -55,7 +55,10 @@ async function navegar() {
   $$("nav a[data-mod]").forEach((a) => a.classList.toggle("ativo", a.dataset.mod === mod));
   $("#sub-integracao").classList.toggle("aberto", mod === "integracao");
   $$("#sub-integracao a").forEach((a) => a.classList.toggle("ativo", mod === "integracao" && a.dataset.sub === sub));
+  $("#sub-expedicao").classList.toggle("aberto", mod === "expedicao");
+  $$("#sub-expedicao a").forEach((a) => a.classList.toggle("ativo", mod === "expedicao" && a.dataset.sub === sub));
   const subtitulo = mod === "integracao" ? ({ visao: "Visão geral", nfs: "NF-e → ML", logs: "Logs", eventos: "Eventos" }[sub] || "")
+    : mod === "expedicao" ? ({ imprimir: "Para imprimir", impressos: "Impressos", despachados: "Despachados" }[sub] || "")
     : mod === "precificacao" && sub === "ml" ? "Mercado Livre" : "";
   $("#titulo").textContent = MODULOS[mod].titulo + (subtitulo ? " · " + subtitulo : "");
   limparErro();
@@ -179,7 +182,33 @@ async function imprimirEtiquetas(ids) {
 // cancelada abre o alerta "Pedido cancelado — não envie" e não imprime.
 // Seleção múltipla: checkbox por linha + "Imprimir selecionadas" (até 20, teto do PDF).
 // O campo esvazia depois de cada leitura; bipar o mesmo código de novo (ou Enter vazio) imprime.
-const expedicao = { lista: [], achado: null, ultimoBipe: "", sel: new Set() };
+const expedicao = { lista: [], achado: null, ultimoBipe: "", sel: new Set(), fase: "imprimir", despachados: [] };
+// Fases (submenus): Para imprimir → Impressos → Despachados (bipado na agência, visto no ML).
+const FASE_EXP = {
+  imprimir: (e) => e.substatus === "ready_to_print",
+  impressos: (e) => e.substatus === "printed",
+};
+
+/** Números dos submenus da Expedição. Silencioso: falha aqui não atrapalha a tela. */
+async function atualizarContagemExpedicao() {
+  if (!token) return;
+  try {
+    const c = await api("/api/expedicao/contagem");
+    for (const [k, v] of Object.entries(c)) {
+      const el = $('.qtd[data-qtd="' + k + '"]');
+      if (el) { el.textContent = String(v); el.classList.toggle("alta", k === "imprimir" && v > 0); }
+    }
+  } catch { /* mantém o último número */ }
+}
+
+/** O campo de bipe fica sempre pronto: volta o cursor para ele quando a tela é atualizada ou a impressão fecha. */
+function focarBipe() {
+  const campo = $("#bipe");
+  if (!campo || !$("#cancelado").hidden) return;
+  const ativo = document.activeElement;
+  if (ativo && ativo !== document.body && ativo !== campo && ativo.matches("input, select, textarea")) return;
+  campo.focus();
+}
 const MAX_SEL = 20;
 
 function alertarCancelado(c) {
@@ -221,18 +250,25 @@ function casaBipe(e, codigo) {
     .some((v) => v && String(v) === c) || (nf && nf === String(Number(c)) && c.length <= 9);
 }
 
-async function renderExpedicao() {
-  const d = await api("/api/etiquetas");
-  expedicao.lista = d.etiquetas;
+async function renderExpedicao(sub) {
+  expedicao.fase = FASE_EXP[sub] || sub === "despachados" ? sub : "imprimir";
+  const [d, desp] = await Promise.all([
+    api("/api/etiquetas"),
+    expedicao.fase === "despachados" ? api("/api/etiquetas?fase=despachados") : Promise.resolve({ etiquetas: [] }),
+  ]);
+  expedicao.lista = d.etiquetas; // o bipe procura em tudo que ainda dá para imprimir, qualquer que seja a aba
+  expedicao.despachados = desp.etiquetas;
+  atualizarContagemExpedicao();
   const prontas = d.etiquetas.filter((e) => e.substatus === "ready_to_print").length;
   $("#conteudo").innerHTML =
     '<div class="bipe"><label for="bipe">Bipar etiqueta</label><input id="bipe" inputmode="numeric" autocomplete="off" placeholder="leia o código do pedido">' +
     '<button type="button" id="limpar-bipe">Limpar</button><button type="button" id="atualizar-exp">Atualizar lista</button>' +
     '<span class="dica">Aceita nº do pedido do ML, nº do envio, chave ou número da NF. O 1º bipe localiza; bipar de novo (ou Enter) imprime.</span></div>' +
     '<div id="resultado-bipe"></div>' +
-    '<div class="cards"><div class="card"><b>' + prontas + '</b><span>Para imprimir</span></div><div class="card"><b>' + (d.etiquetas.length - prontas) + '</b><span>Já impressas (reimpressão)</span></div></div>' +
-    '<div class="acoes-sel"><button type="button" class="primario" id="imprimir-sel" disabled>Imprimir selecionadas</button><span class="dica" id="info-sel"></span></div>' +
-    '<div class="painel"><table><thead><tr><th class="sel"><input type="checkbox" id="sel-todas" aria-label="Selecionar todas as visíveis"></th><th>Pedido ML</th><th>NF</th><th>Envio</th><th>Venda</th><th class="n">Total</th><th>Situação</th><th></th></tr></thead><tbody id="tb-exp"></tbody></table></div>';
+    '<div class="cards"><div class="card"><b>' + prontas + '</b><span>Para imprimir</span></div><div class="card"><b>' + (d.etiquetas.length - prontas) + '</b><span>Impressas, aguardando despacho</span></div></div>' +
+    (expedicao.fase === "despachados" ? '<p class="dica">Despachados nos últimos 7 dias: o ML registrou a entrada do pacote na agência ou coleta.</p>' : "") +
+    '<div class="acoes-sel"' + (expedicao.fase === "despachados" ? " hidden" : "") + '><button type="button" class="primario" id="imprimir-sel" disabled>Imprimir selecionadas</button><span class="dica" id="info-sel"></span></div>' +
+    '<div class="painel"><table><thead><tr><th class="sel">' + (expedicao.fase === "despachados" ? "" : '<input type="checkbox" id="sel-todas" aria-label="Selecionar todas as visíveis">') + '</th><th>Pedido ML</th><th>NF</th><th>Envio</th><th>Venda</th><th class="n">Total</th><th>Situação</th><th></th></tr></thead><tbody id="tb-exp"></tbody></table></div>';
   // Seleção que ficou de uma lista anterior só vale para envios ainda liberados.
   const ids = new Set(d.etiquetas.map((e) => e.shipment_id));
   expedicao.sel = new Set([...expedicao.sel].filter((id) => ids.has(id)));
@@ -246,7 +282,7 @@ async function renderExpedicao() {
     } else expedicao.sel.delete(cx.dataset.sel);
     atualizarSelecao();
   });
-  $("#sel-todas").addEventListener("change", (ev) => {
+  if ($("#sel-todas")) $("#sel-todas").addEventListener("change", (ev) => {
     const visiveis = $$("#tb-exp input[data-sel]").map((c) => c.dataset.sel);
     if (ev.target.checked) {
       for (const id of visiveis) {
@@ -300,8 +336,10 @@ function localizar(codigo) {
 }
 
 function desenharExpedicao() {
+  if (expedicao.fase === "despachados") return desenharDespachados();
   const focoId = expedicao.achado && expedicao.achado.shipment_id;
-  const linhas = focoId ? expedicao.lista.filter((e) => e.shipment_id === focoId) : expedicao.lista;
+  // O bipe acha em qualquer fase imprimível; sem bipe, a tabela mostra só a aba atual.
+  const linhas = focoId ? expedicao.lista.filter((e) => e.shipment_id === focoId) : expedicao.lista.filter(FASE_EXP[expedicao.fase]);
   $("#tb-exp").innerHTML = linhas.map((e) => '<tr class="' + (e.shipment_id === focoId ? "foco" : "") + (expedicao.sel.has(e.shipment_id) ? " sel" : "") + '">' +
     '<td class="sel"><input type="checkbox" data-sel="' + esc(e.shipment_id) + '"' + (expedicao.sel.has(e.shipment_id) ? " checked" : "") +
     ' aria-label="Selecionar pedido ' + esc(e.chave || e.shipment_id) + '"></td><td><b>' + esc(e.chave || "—") + "</b></td><td>" +
@@ -310,6 +348,13 @@ function desenharExpedicao() {
     '</td><td><button type="button" data-exp="' + esc(e.shipment_id) + '">' + (e.substatus === "printed" ? "Reimprimir" : "Imprimir") + "</button></td></tr>").join("") ||
     '<tr><td colspan="8" class="mut">Nenhuma etiqueta liberada agora.</td></tr>';
   atualizarSelecao();
+}
+
+function desenharDespachados() {
+  $("#tb-exp").innerHTML = expedicao.despachados.map((e) => "<tr><td></td><td><b>" + esc(e.chave || "—") + "</b></td><td>" + esc(nfDaChave(e.fiscal_key) || "—") +
+    "</td><td>" + esc(e.shipment_id) + "</td><td>" + esc(dtIso(e.data_ml)) + '</td><td class="n">' + brl(e.total) + "</td><td>" +
+    '<span class="tag ok">despachado ' + esc(dt(e.despachado_em)) + '</span> <span class="mut">' + esc([e.status, e.substatus].filter(Boolean).join(" / ")) + "</span></td><td></td></tr>").join("") ||
+    '<tr><td colspan="8" class="mut">Nenhum envio despachado nos últimos 7 dias.</td></tr>';
 }
 
 function atualizarSelecao() {
@@ -348,6 +393,7 @@ async function imprimirSelecionadas(bt) {
     await imprimirPdf(escolhidas.map((e) => e.shipment_id));
     escolhidas.forEach((e) => { e.substatus = "printed"; e.impresso_em = Date.now(); });
     expedicao.sel.clear();
+    atualizarContagemExpedicao();
     $("#resultado-bipe").innerHTML = '<div class="achado"><span class="ok">' + escolhidas.length + " etiqueta(s) enviada(s) para impressão.</span></div>";
     desenharExpedicao();
   } finally {
@@ -373,6 +419,7 @@ async function imprimirPdf(ids) {
 
 async function imprimirExpedicao(e) {
   await imprimirPdf([e.shipment_id]);
+  setTimeout(atualizarContagemExpedicao, 1500);
   e.substatus = "printed"; e.impresso_em = Date.now();
   expedicao.achado = null; expedicao.ultimoBipe = "";
   const campo = $("#bipe");
@@ -596,6 +643,11 @@ document.addEventListener("keydown", (e) => {
 });
 $("#gaveta").addEventListener("click", (e) => { if (e.target.id === "gaveta") $("#gaveta").hidden = true; });
 window.addEventListener("hashchange", navegar);
+// Ao voltar da janela de impressão (ou de outra janela), o cursor volta para o bipe.
+window.addEventListener("focus", () => { if (rota().mod === "expedicao") setTimeout(focarBipe, 50); });
+window.addEventListener("afterprint", () => setTimeout(focarBipe, 50));
+// Números dos submenus da Expedição em dia, sem recarregar a tela.
+setInterval(atualizarContagemExpedicao, 60_000);
 
-if (token) { $("#tk").value = ""; carregarModos(); }
+if (token) { $("#tk").value = ""; carregarModos(); atualizarContagemExpedicao(); }
 navegar();

@@ -180,7 +180,11 @@ async function rotaApi(req: Request, env: Env, url: URL): Promise<Response> {
   }
 
   // Etiquetas ---------------------------------------------------------------------
-  if (req.method === "GET" && p === "/api/etiquetas") return json({ etiquetas: await store.listarEtiquetas() });
+  if (req.method === "GET" && p === "/api/etiquetas") {
+    if (url.searchParams.get("fase") === "despachados") return json({ etiquetas: await store.listarDespachados() });
+    return json({ etiquetas: await store.listarEtiquetas() });
+  }
+  if (req.method === "GET" && p === "/api/expedicao/contagem") return json(await store.contagemExpedicao());
   // Expedição: cada bipe confere no ML, ao vivo, se a venda foi cancelada.
   if (req.method === "GET" && p === "/api/expedicao/checar") {
     return json(await checarBipe(env, String(url.searchParams.get("codigo") ?? "").slice(0, 200)));
@@ -292,6 +296,9 @@ export default {
     const store = storeStub(env);
     const devidos = await store.eventosDevidos();
     for (const ev of devidos) await processarEvento(env, ev); // sequencial: respeita o ML
+    // Fases da Expedição: relê alguns envios impressos para ver se já foram despachados
+    // (o webhook "shipments" cobre quase tudo; isto pega o que ele perder).
+    try { await atualizarEnviosPendentes(env, 5); } catch (e) { await store.log("aviso", null, `atualização de envios: ${(e as Error).message}`); }
     try {
       await varrerNfs(env, env.XML_MODO === "automatico");
     } catch (e) {
