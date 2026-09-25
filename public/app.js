@@ -860,7 +860,7 @@ const TXT_SAUDE = { ok: "Operando", warn: "Atenção", err: "Sem resposta", off:
 
 function noArvore({ logo, marca, titulo, sub, saude, det, extra, classe }) {
   return '<div class="no-arvore ' + (classe || "") + " saude-" + saude + '">' +
-    (logo ? '<img src="' + logo + '" alt="' + esc(titulo) + '"' + (marca ? ' class="' + marca + '"' : "") + ">" : '<span class="skyhub-marca">' + esc(titulo) + "</span>") +
+    (logo ? '<img src="' + logo + '" alt="' + esc(titulo) + '"' + (marca ? ' class="' + marca + '"' : "") + ">" : '<span class="skyhub-marca">' + (titulo === "SkyHub" ? '<img src="/logos/skyhub.svg" alt="" aria-hidden="true">' : "") + esc(titulo) + "</span>") +
     (sub ? '<span class="no-sub">' + esc(sub) + "</span>" : "") +
     '<span class="estado"><span class="ponto ' + (saude === "off" ? "" : saude) + '"></span>' + TXT_SAUDE[saude] + "</span>" +
     (det ? '<span class="det">' + det + "</span>" : "") + (extra || "") + "</div>";

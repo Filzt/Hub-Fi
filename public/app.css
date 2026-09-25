@@ -464,3 +464,8 @@ thead tr.tabela-filtros th { position: static; padding: 6px 8px; background: var
 .tabela-paginas button { min-height: 30px; min-width: 32px; padding: 3px 8px; font-size: 13px; }
 .tabela-paginas button.atual { background: var(--info); border-color: var(--info); color: #fff; }
 .tabela-paginas .reticencias { padding: 0 2px; }
+
+/* logo do SkyHub (logos/skyhub.svg) */
+img.marca-simbolo { background: none; padding: 0; border-radius: 9px; box-shadow: 0 4px 14px rgb(91 141 254 / .35); object-fit: contain; }
+.no-arvore .skyhub-marca { display: inline-flex; align-items: center; gap: 10px; }
+.no-arvore .skyhub-marca img { width: 34px; height: 34px; max-width: none; max-height: none; }
