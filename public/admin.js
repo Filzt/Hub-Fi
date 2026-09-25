@@ -40,7 +40,7 @@ function mostrarLink(link, email) {
     return;
   }
   alvo.innerHTML = '<div class="achado link-senha"><div><b>Link para ' + esc(email) + " definir a senha</b>" +
-    '<div class="mut">Mande pelo WhatsApp. Vale por pouco tempo e só uma vez; se expirar, gere outro.</div>' +
+    '<div class="mut">Vale uma vez, por pouco tempo.</div>' +
     '<input type="text" readonly id="link-valor" value="' + esc(link) + '"></div>' +
     '<button type="button" class="primario" id="copiar-link">Copiar</button></div>';
   $("#link-valor").select();
@@ -61,7 +61,6 @@ async function renderUsuarios() {
     '<form id="form-funcao-rapida" class="form-funcao" hidden><h4>Nova função</h4><label>Nome da função<input name="nome" maxlength="40" placeholder="Ex.: Expedição"></label>' +
     camposFuncao("rapida", null, Object.keys(NOMES_MODULO)) +
     '<div class="acoes"><button type="submit" class="primario">Criar função</button><button type="button" id="cancelar-funcao-rapida">Cancelar</button></div></form>' +
-    '<p class="dica">A pessoa recebe um link para definir a própria senha. Você não vê nem escolhe a senha de ninguém.</p>' +
     '<div id="link-gerado"></div></div>' +
     '<div class="painel"><table><thead><tr><th>Nome</th><th>E-mail</th><th>Função</th><th>Situação</th><th>Último acesso</th><th></th></tr></thead><tbody>' +
     (usuarios.map((u) => '<tr class="' + (u.ativo ? "" : "inativo") + '"><td><b>' + esc(u.nome) + "</b>" + (u.eu ? ' <span class="tag">Você</span>' : "") + "</td><td>" + esc(u.email) +

@@ -96,15 +96,15 @@ const carregando = (txt = "Carregando…") => '<div class="carregando">' + esc(t
 
 /* ------------------------------------------------------------------ roteamento */
 const MODULOS = {
-  pedidos: { titulo: "Pedidos", render: renderPedidos, desc: "Todas as vendas dos canais, da entrada até a entrega." },
+  pedidos: { titulo: "Pedidos", render: renderPedidos },
   expedicao: { titulo: "Expedição", render: renderExpedicao },
-  produtos: { titulo: "Produtos", render: renderProdutos, desc: "Cada SKU do Sankhya e em quais canais de venda ele está." },
+  produtos: { titulo: "Produtos", render: renderProdutos },
   publicacao: { titulo: "Publicar anúncios", render: renderPublicacao, canal: "Mercado Livre" },
-  precificacao: { titulo: "Precificação", render: renderPrecificacao, canal: "Mercado Livre", desc: "Régua que transforma o preço de loja do Sankhya no preço do anúncio." },
-  flex: { titulo: "Envio Flex", render: renderFlex, canal: "Mercado Livre", desc: "Quais anúncios oferecem entrega no mesmo dia pelo Flex. Liga e desliga por anúncio, sempre por clique." },
+  precificacao: { titulo: "Precificação", render: renderPrecificacao, canal: "Mercado Livre" },
+  flex: { titulo: "Envio Flex", render: renderFlex, canal: "Mercado Livre" },
   integracao: { titulo: "Integrações", render: renderIntegracao },
   admin: { titulo: "Acessos", render: renderAdmin },
-  perfil: { titulo: "Meu perfil", render: renderPerfil, desc: "Seu nome, e-mail de acesso e senha." },
+  perfil: { titulo: "Meu perfil", render: renderPerfil },
 };
 const PADRAO_SUB = { integracao: "visao", expedicao: "imprimir", admin: "usuarios", publicacao: "fila", precificacao: "ml", flex: "lista" };
 const SUBTITULOS = {
@@ -113,20 +113,7 @@ const SUBTITULOS = {
   admin: { usuarios: "Usuários", funcoes: "Funções" },
   publicacao: { historico: "Histórico" },
 };
-const DESC_SUB = {
-  "integracao/visao": "Saúde da ligação entre os canais, o SkyHub e o Sankhya.",
-  "integracao/nfs": "Notas faturadas no Sankhya e o envio do XML ao Mercado Livre.",
-  "integracao/logs": "Registro do que o SkyHub fez, com erros e avisos.",
-  "integracao/eventos": "Notificações recebidas dos canais e o processamento de cada uma.",
-  "expedicao/agendados": "O Mercado Livre segura a etiqueta até a data de liberação.",
-  "expedicao/imprimir": "Bipe a etiqueta ou marque várias para imprimir de uma vez.",
-  "expedicao/impressos": "Etiquetas impressas, aguardando despacho na agência ou coleta.",
-  "expedicao/despachados": "Envios que o Mercado Livre registrou como despachados hoje.",
-  "admin/usuarios": "Quem entra no SkyHub e com qual função.",
-  "admin/funcoes": "O que cada função pode ver e fazer.",
-  "publicacao/fila": "SKUs com saldo no Sankhya e sem anúncio, com a ficha do ML sugerida. Nada vai ao ar sem o seu clique.",
-  "publicacao/historico": "Tudo o que foi publicado pelo SkyHub e a auditoria de cada anúncio.",
-};
+const DESC_SUB = {}; // sem subtítulo explicativo nas telas (Filipe, 25/09/2026)
 
 function rota() {
   const [mod, sub] = (location.hash.replace(/^#/, "") || "pedidos").split("/");
@@ -382,8 +369,6 @@ async function renderExpedicao(sub) {
     "</div>" +
     '<div id="resultado-bipe"></div>' +
     '<div class="cards"><div class="card"><b id="n-prontas">' + prontas + '</b><span>Para imprimir</span></div><div class="card"><b id="n-impressas">' + (d.etiquetas.length - prontas) + '</b><span>Impressas, aguardando despacho</span></div></div>' +
-    (expedicao.fase === "despachados" ? '<p class="dica">Despachados hoje: o ML registrou a entrada do pacote na agência ou coleta.</p>' : "") +
-    (expedicao.fase === "agendados" ? '<p class="dica">Agendados pelo Mercado Livre: a etiqueta só é liberada na data indicada. Separe a caixa e aguarde; a NF sobe sozinha quando o ML liberar.</p>' : "") +
     '<div class="acoes-sel"' + (soLista ? " hidden" : "") + '><button type="button" class="primario" id="imprimir-sel" disabled>Imprimir selecionadas</button><span class="dica" id="info-sel"></span></div>' +
     '<div class="painel"><table><thead><tr><th class="sel">' + (soLista ? "" : '<input type="checkbox" id="sel-todas" aria-label="Selecionar todas as visíveis">') + '</th><th>Pedido</th><th>NF</th><th>Envio</th><th>Venda</th><th class="n">Total</th><th>Situação</th><th></th></tr></thead><tbody id="tb-exp"></tbody></table></div>';
   // Seleção que ficou de uma lista anterior só vale para envios ainda liberados.
@@ -520,7 +505,7 @@ function atualizarSelecao() {
   if (!bt) return;
   bt.disabled = n === 0;
   bt.textContent = n ? "Imprimir selecionadas (" + n + ")" : "Imprimir selecionadas";
-  $("#info-sel").textContent = n ? "" : "Marque as etiquetas na lista para imprimir várias de uma vez (até " + MAX_SEL + ").";
+  $("#info-sel").textContent = "";
   const visiveis = $$("#tb-exp input[data-sel]");
   visiveis.forEach((c) => c.closest("tr").classList.toggle("sel", c.checked));
   const todas = $("#sel-todas");
@@ -704,10 +689,9 @@ async function renderPrecificacao() {
   const hist = (d.historico || []).map((h) => "<tr><td>" + esc(dt(h.em)) + "</td><td>" + esc(h.responsavel) + "</td><td>" +
     Object.keys(TIPOS).map((t) => esc(TIPOS[t]) + ": ×" + esc(h.reguas[t].fator) + " + " + brl(h.reguas[t].soma)).join("<br>") + "</td><td>" + esc(h.motivo || "") + "</td></tr>").join("");
   $("#conteudo").innerHTML =
-    '<div class="painel"><h3>Réguas vigentes</h3><p class="mut texto-painel">Preço no ML = preço de loja (tabela 0 do Sankhya) × multiplicador + acréscimo. ' +
-    "Vale para os anúncios com saldo. Mudanças acima de 25% num anúncio não são aplicadas automaticamente. Depois de salvar, o ML é atualizado em até ~2 min (15 anúncios por rodada).</p>" +
+    '<div class="painel"><h3>Réguas vigentes</h3><p class="mut texto-painel">Preço no ML = preço de loja × multiplicador + acréscimo.</p>' +
     '<div class="reguas">' + Object.keys(TIPOS).map(cartao).join("") + "</div>" +
-    '<div class="form-linha"><span class="mut">Fica registrado com o seu login (' + esc(eu ? eu.email : "") + ").</span>" +
+    '<div class="form-linha">' +
     '<label class="motivo">Motivo<input id="motivo" maxlength="200" placeholder="Ex.: campanha, custo de frete"></label>' +
     '<button type="button" id="simular">Simular impacto</button><button type="button" id="salvar" class="primario">Salvar régua</button></div>' +
     '<div id="simulacao"></div></div>' +
@@ -795,12 +779,11 @@ async function renderPerfil() {
       '<label>Como você aparece no SkyHub<input name="nome" maxlength="80" required autocomplete="name" value="' + esc(u.nome) + '"></label>' +
       '<div class="acoes"><button class="primario" type="submit">Salvar nome</button></div></form></div>' +
     '<div class="painel"><h3>E-mail de acesso</h3><form id="perfil-email" class="form-perfil" autocomplete="off">' +
-      '<p class="dica">É o e-mail que você usa para entrar. Depois de trocar, o login passa a ser com o novo.</p>' +
       '<label>Novo e-mail<input name="email" type="email" required maxlength="254" autocomplete="off"></label>' +
       '<label>Repita o novo e-mail<input name="email2" type="email" required maxlength="254" autocomplete="off"></label>' +
       '<label>Senha atual<input name="senha" type="password" required autocomplete="current-password"></label>' +
       '<div class="acoes"><button class="primario" type="submit">Trocar e-mail</button></div></form></div>' +
-    '<div class="painel"><h3>Senha</h3><div class="corpo-painel"><p class="dica">Pelo menos 8 caracteres, com letras e números.</p>' +
+    '<div class="painel"><h3>Senha</h3><div class="corpo-painel">' +
       '<div class="acoes"><button type="button" id="trocar-senha">Trocar senha</button></div></div></div>' +
     "</div>";
 
@@ -880,20 +863,20 @@ async function renderArvore() {
         logo: "/logos/mercadolivre.webp", marca: "logo-claro", titulo: "Mercado Livre", saude: saudeMl,
         det: "Token " + (s.ml.tokenOk ? "válido até " + esc(hora(s.ml.expiraEm)) : "INVÁLIDO") + " · Último aviso " + esc(haQuanto(s.ml.ultimoEvento)) +
           (s.ml.eventosComErro ? '<br><a href="#integracao/eventos">' + esc(s.ml.eventosComErro) + " evento(s) com erro</a>" : ""),
-        extra: '<div class="metricas">' + metrica(h.eventosRecebidos, "Vendas recebidas hoje", "Webhook") + metrica(h.xmlEnviados, "XML de NF enviados", "Libera a etiqueta") +
-          metrica(h.ajustesAnuncio, "Estoque e preço ajustados", h.falhasAnuncio ? h.falhasAnuncio + " falha(s)" : "A cada 2 min") + metrica(h.etiquetasBaixadas, "Etiquetas baixadas", "PDF 10x15") + "</div>",
+        extra: '<div class="metricas">' + metrica(h.eventosRecebidos, "Vendas recebidas hoje") + metrica(h.xmlEnviados, "XML de NF enviados") +
+          metrica(h.ajustesAnuncio, "Estoque e preço ajustados", h.falhasAnuncio ? h.falhasAnuncio + " falha(s)" : "") + metrica(h.etiquetasBaixadas, "Etiquetas baixadas") + "</div>",
       }),
     },
-    { saude: "off", html: noArvore({ titulo: "Nuvemshop", sub: "Loja da Skyline", saude: "off", classe: "breve", det: "Próxima integração" }) },
+    { saude: "off", html: noArvore({ titulo: "Nuvemshop", saude: "off", classe: "breve" }) },
   ];
   $("#conteudo").innerHTML =
     '<div class="painel"><div class="arvore">' +
-    noArvore({ logo: "/logos/sankhya.svg", marca: "logo-escuro", titulo: "Sankhya", sub: "ERP · Fonte de estoque, preço e fiscal", saude: saudeSk,
+    noArvore({ logo: "/logos/sankhya.svg", marca: "logo-escuro", titulo: "Sankhya", saude: saudeSk,
       det: "Última leitura " + esc(haQuanto(s.sankhya.ultimaLeitura)) + (s.sankhya.ultimoErro ? " · Último erro " + esc(haQuanto(s.sankhya.ultimoErro.em)) : "") }) +
     '<div class="tronco saude-' + saudeSk + '"><div class="rotulos">' +
-      '<span class="rotulo">' + metrica(h.pedidosGravados, "Pedidos gravados hoje", "Parceiro + pedido 1090") + "</span>" +
-      '<span class="rotulo">' + metrica(haQuanto(s.sankhya.ultimaLeitura), "Leitura de estoque e preço", "Tabela 0 e TGFEST") + "</span></div></div>" +
-    noArvore({ titulo: "SkyHub", sub: "Integração", saude: saudeHub, classe: "hub",
+      '<span class="rotulo">' + metrica(h.pedidosGravados, "Pedidos gravados hoje") + "</span>" +
+      '<span class="rotulo">' + metrica(haQuanto(s.sankhya.ultimaLeitura), "Leitura de estoque e preço") + "</span></div></div>" +
+    noArvore({ logo: "/logos/skyhub-nome.png", marca: "logo-nome", titulo: "SkyHub", saude: saudeHub, classe: "hub",
       det: "Última rodada " + esc(haQuanto(s.skyhub.ultimaRodada)) + (s.skyhub.rodadaAbortada ? ' · <span class="warn">Abortada: ' + esc(s.skyhub.rodadaAbortada) + "</span>" : "") +
         "<br>" + esc(s.skyhub.eventosPendentes) + " evento(s) na fila · " + (h.errosLog ? '<a href="#integracao/logs">' + esc(h.errosLog) + " erro(s) hoje</a>" : "0 erros hoje") }) +
     '<div class="galhos' + (canais.length === 1 ? " um" : "") + '">' + canais.map((c) => '<div class="galho saude-' + c.saude + '">' + c.html + "</div>").join("") + "</div>" +

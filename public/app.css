@@ -469,3 +469,11 @@ thead tr.tabela-filtros th { position: static; padding: 6px 8px; background: var
 img.marca-simbolo { background: none; padding: 0; border-radius: 9px; box-shadow: 0 4px 14px rgb(91 141 254 / .35); object-fit: contain; }
 .no-arvore .skyhub-marca { display: inline-flex; align-items: center; gap: 10px; }
 .no-arvore .skyhub-marca img { width: 34px; height: 34px; max-width: none; max-height: none; }
+
+/* logo com nome (logos/skyhub-nome.png) */
+.marca { padding: 2px 6px; }
+.marca-nome { height: 40px; width: auto; display: block; }
+.login-marca { margin-bottom: 22px; }
+.login-marca .marca-nome { height: 52px; }
+.no-arvore img.logo-nome { max-width: 170px; max-height: 42px; }
+@media (max-width: 900px) { .marca-nome { height: 28px; } }

@@ -91,7 +91,7 @@ async function conferirPub(sku) {
     '<div class="painel"><b>' + esc(x.produto) + '</b><div class="mut">' + esc(x.sku) + " · " + esc(x.marca) + " · " + esc(x.capacidade) + " · " + esc(x.cor) +
     " · " + esc(x.qualidade) + " → ML " + esc(d.grau_ml || "—") + '</div><div>Saldo no Sankhya: <b>' + esc(x.disp) + "</b> · Preço de loja (tabela 0): <b>" + brl(x.preco_loja) + "</b></div></div>" +
     '<form id="form-publicar">' +
-    '<h3>Ficha do ML</h3><p class="dica">Confira modelo, cor, capacidade e grau na foto e no título. Vínculo errado vira reclamação — e a conta já tem 3 advertências.</p>' +
+    '<h3>Ficha do ML</h3><p class="dica">Confira modelo, cor, capacidade e grau.</p>' +
     d.fichas.map((f) => {
       const ok = fichaOk(f);
       return '<label class="ficha' + (ok ? "" : " indisponivel") + '"><input type="radio" name="pdp" value="' + esc(f.pdp) + '"' + (f === primeira ? " checked" : "") + (ok ? "" : " disabled") + ">" +
@@ -108,7 +108,7 @@ async function conferirPub(sku) {
       NOME_TIPO[t] + " — " + brl(d.precos[t]) + "</label>").join("") + "</div>" +
     '<h3>Envio</h3><label class="check"><input type="checkbox" name="flex"' + (d.flexPadrao ? " checked" : "") + "> Oferecer Envio Flex (entrega no mesmo dia)</label>" +
     '<div class="acoes"><button type="submit" class="primario"' + (primeira ? "" : " disabled") + ">Publicar no Mercado Livre</button>" +
-    '<span class="mut">Quantidade: ' + esc(x.disp) + " (depois o SkyHub sincroniza estoque e preço sozinho)</span></div>" +
+    '<span class="mut">Quantidade: ' + esc(x.disp) + "</span></div>" +
     '<div id="resultado-pub"></div></form>';
 
   $("#form-publicar").onsubmit = async (e) => {
@@ -185,7 +185,7 @@ function resumoConfigFlex(c) {
     "<dt>Prazo</dt><dd>" + (c.janela === "same_day" ? "Entrega no mesmo dia" : c.janela === "next_day" ? "Entrega no dia seguinte" : esc(cap(c.janela || "—"))) + "</dd>" +
     Object.keys(DIAS_FLEX).map((d) => "<dt>" + DIAS_FLEX[d] + "</dt><dd>" + faixa(d) + "</dd>").join("") +
     "<dt>Zonas</dt><dd>" + (c.zonas.length ? c.zonas.map((z) => esc(z.replace(/^BR-SP-/, "SP "))).join(", ") : "—") + "</dd></dl>" +
-    '<p class="dica">Zonas, horário de corte e capacidade se mudam no painel do Mercado Livre (Vendas → Envios Flex).</p>';
+    "";
 }
 
 function desenharFlex() {
@@ -195,7 +195,6 @@ function desenharFlex() {
   const lista = d.anuncios.filter(f).filter((a) => !termo || a.item_id.includes(termo) || String(a.sku).includes(termo) || String(a.produto || "").toUpperCase().includes(termo));
   const n = flexTela.sel.size;
   $("#conteudo").innerHTML =
-    '<div class="nao-achado aviso-flex">Flex é entrega no mesmo dia feita por vocês. Cada anúncio ligado pode gerar pedido com prazo de horas; atraso derruba a reputação da conta.</div>' +
     '<div class="painel"><h3>Configuração Flex da conta</h3><div class="corpo-painel">' + resumoConfigFlex(d.config) +
     '<label class="check forte"><input type="checkbox" id="flex-novos"' + (d.novosComFlex ? " checked" : "") + "> Novos anúncios publicados pelo SkyHub já saem com Flex</label></div></div>" +
     '<div class="cards">' + FILTROS_FLEX.map(([k, t, fn]) => {
@@ -204,7 +203,7 @@ function desenharFlex() {
       return '<button type="button" class="card clicavel' + (flexTela.filtro === k ? " ativo" : "") + '" data-filtro-flex="' + k + '" aria-pressed="' + (flexTela.filtro === k) + '"><b>' + q + "</b><span>" + esc(t) + "</span></button>";
     }).join("") + "</div>" +
     '<div class="barra"><input id="busca-flex" type="search" placeholder="MLB, SKU ou produto" value="' + esc(flexTela.busca) + '" aria-label="Buscar anúncio">' +
-    '<span class="espaco"></span><span class="dica" id="info-flex">' + (n ? n + " selecionado(s)" : "Marque os anúncios na lista") + "</span>" +
+    '<span class="espaco"></span><span class="dica" id="info-flex">' + (n ? n + " selecionado(s)" : "") + "</span>" +
     '<button type="button" id="flex-desligar"' + (n ? "" : " disabled") + ">Desativar Flex</button>" +
     '<button type="button" class="primario" id="flex-ligar"' + (n ? "" : " disabled") + ">Ativar Flex" + (n ? " (" + n + ")" : "") + "</button></div>" +
     '<div id="resultado-flex"></div>' +
