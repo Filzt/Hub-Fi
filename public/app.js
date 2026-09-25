@@ -187,12 +187,6 @@ function alertarCancelado(c) {
     (c.motivo ? "<br>" + esc(c.motivo) : "") + (c.envio_status ? "<br>Envio: " + esc(c.envio_status) : "");
   $("#cancelado").hidden = false;
   $(".alerta-caixa").focus(); // foco na caixa: o Enter do leitor não fecha o alerta sozinho
-  // Bipe sonoro curto para chamar a atenção de quem está com o leitor na mão.
-  try {
-    const ac = new (window.AudioContext || window.webkitAudioContext)();
-    const o = ac.createOscillator(); o.type = "square"; o.frequency.value = 440; o.connect(ac.destination);
-    o.start(); o.stop(ac.currentTime + 0.6);
-  } catch { /* sem áudio, segue só o visual */ }
 }
 
 /** Vários cancelados de uma vez (impressão em lote). */
