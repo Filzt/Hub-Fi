@@ -149,6 +149,8 @@ export class Store extends DurableObject<Env> {
     // Expedição em 3 fases: marca quando o envio saiu da nossa mão (bipado na agência).
     const colsEnv = new Set(this.sql.exec<{ name: string }>(`PRAGMA table_info(envios)`).toArray().map((c) => c.name));
     if (!colsEnv.has("despachado_em")) this.sql.exec(`ALTER TABLE envios ADD COLUMN despachado_em INTEGER`);
+    // Agendado pelo ML (pending/buffered): data em que a etiqueta é liberada (lead_time.buffering.date).
+    if (!colsEnv.has("liberacao")) this.sql.exec(`ALTER TABLE envios ADD COLUMN liberacao TEXT`);
     const jaCorrigido = this.sql.exec<{ n: number }>(`SELECT COUNT(*) n FROM meta WHERE chave = 'despacho_v2'`).one().n;
     if (!jaCorrigido) {
       this.sql.exec(`UPDATE envios SET despachado_em = NULL`);
@@ -212,14 +214,32 @@ export class Store extends DurableObject<Env> {
   }
 
   /** `despachado_em` vem do histórico do envio no ML (ver despachoDoEnvio em etiquetas.ts); o ML é a fonte. */
-  salvarEnvio(e: { shipment_id: string; chave: string | null; status: string; substatus: string; logistica: string; despachado_em?: number | null }): void {
+  salvarEnvio(e: {
+    shipment_id: string; chave: string | null; status: string; substatus: string; logistica: string;
+    despachado_em?: number | null; liberacao?: string | null;
+  }): void {
     this.sql.exec(
-      `INSERT INTO envios (shipment_id, chave, status, substatus, logistica, atualizado_em, despachado_em) VALUES (?,?,?,?,?,?,?)
+      `INSERT INTO envios (shipment_id, chave, status, substatus, logistica, atualizado_em, despachado_em, liberacao) VALUES (?,?,?,?,?,?,?,?)
        ON CONFLICT(shipment_id) DO UPDATE SET chave = COALESCE(excluded.chave, envios.chave), status = excluded.status,
          substatus = excluded.substatus, logistica = excluded.logistica, atualizado_em = excluded.atualizado_em,
-         despachado_em = excluded.despachado_em`,
-      e.shipment_id, e.chave, e.status, e.substatus, e.logistica, Date.now(), e.despachado_em ?? null,
+         despachado_em = excluded.despachado_em, liberacao = excluded.liberacao`,
+      e.shipment_id, e.chave, e.status, e.substatus, e.logistica, Date.now(), e.despachado_em ?? null, e.liberacao ?? null,
     );
+  }
+
+  /** Envios agendados pelo ML (pending/buffered): etiqueta só sai na data de liberação. */
+  listarAgendados() {
+    return this.sql
+      .exec(
+        `SELECT e.shipment_id, COALESCE(n.chave, e.chave) chave, e.chave envio_order, p.data_ml, e.status, e.substatus, e.logistica,
+                e.atualizado_em, e.liberacao, n.fiscal_key, n.nunota_nf, n.status nf_status, p.total, p.order_ids
+         FROM envios e
+         LEFT JOIN nfs n ON n.shipment_id = e.shipment_id
+         LEFT JOIN pedidos p ON p.chave = COALESCE(n.chave, e.chave)
+         WHERE e.status = 'pending' AND e.substatus = 'buffered'
+         ORDER BY COALESCE(e.liberacao, '9999') ASC, e.atualizado_em DESC LIMIT 300`,
+      )
+      .toArray();
   }
 
   /** Envios despachados desde `desde` (fase 3 da Expedição: o dia de hoje), mais recentes primeiro. */
@@ -239,10 +259,11 @@ export class Store extends DurableObject<Env> {
   }
 
   /** Quantidade por fase da Expedição (números dos submenus). */
-  contagemExpedicao(desdeDespacho: number): { imprimir: number; impressos: number; despachados: number } {
+  contagemExpedicao(desdeDespacho: number): { agendados: number; imprimir: number; impressos: number; despachados: number } {
     const r = this.sql
-      .exec<{ imprimir: number; impressos: number; despachados: number }>(
+      .exec<{ agendados: number; imprimir: number; impressos: number; despachados: number }>(
         `SELECT
+           SUM(CASE WHEN status = 'pending' AND substatus = 'buffered' THEN 1 ELSE 0 END) agendados,
            SUM(CASE WHEN status = 'ready_to_ship' AND substatus = 'ready_to_print' THEN 1 ELSE 0 END) imprimir,
            SUM(CASE WHEN status = 'ready_to_ship' AND substatus = 'printed' THEN 1 ELSE 0 END) impressos,
            SUM(CASE WHEN despachado_em >= ? THEN 1 ELSE 0 END) despachados
@@ -250,12 +271,12 @@ export class Store extends DurableObject<Env> {
         desdeDespacho,
       )
       .one();
-    return { imprimir: r.imprimir ?? 0, impressos: r.impressos ?? 0, despachados: r.despachados ?? 0 };
+    return { agendados: r.agendados ?? 0, imprimir: r.imprimir ?? 0, impressos: r.impressos ?? 0, despachados: r.despachados ?? 0 };
   }
 
   /** Envios das NFs conhecidas ainda não despachados, os mais desatualizados primeiro. */
   enviosParaAtualizar(limite: number): string[] {
-    return this.sql
+    const ids = this.sql
       .exec<{ id: string }>(
         `SELECT n.shipment_id id FROM nfs n LEFT JOIN envios e ON e.shipment_id = n.shipment_id
          WHERE n.shipment_id IS NOT NULL AND n.status IN ('enviado','ja_no_ml')
@@ -265,6 +286,14 @@ export class Store extends DurableObject<Env> {
         limite,
       )
       .toArray().map((r) => r.id);
+    // Agendados (pending/buffered) não têm NF enviada ainda: entram pela tabela de envios.
+    const agendados = this.sql
+      .exec<{ id: string }>(
+        `SELECT shipment_id id FROM envios WHERE status = 'pending' AND substatus = 'buffered' ORDER BY atualizado_em ASC LIMIT ?`,
+        Math.max(1, Math.floor(limite / 3)), // não toma a rodada toda: o webhook já avisa a liberação
+      )
+      .toArray().map((r) => r.id);
+    return [...new Set([...agendados, ...ids])].slice(0, limite);
   }
 
   /** Pedido (pack/order) e chave da NF de cada envio, para a faixa da NF na etiqueta. */

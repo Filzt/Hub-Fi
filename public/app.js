@@ -58,7 +58,7 @@ async function navegar() {
   $("#sub-expedicao").classList.toggle("aberto", mod === "expedicao");
   $$("#sub-expedicao a").forEach((a) => a.classList.toggle("ativo", mod === "expedicao" && a.dataset.sub === sub));
   const subtitulo = mod === "integracao" ? ({ visao: "Visão geral", nfs: "NF-e → ML", logs: "Logs", eventos: "Eventos" }[sub] || "")
-    : mod === "expedicao" ? ({ imprimir: "Para imprimir", impressos: "Impressos", despachados: "Despachados" }[sub] || "")
+    : mod === "expedicao" ? ({ agendados: "Agendados", imprimir: "Para imprimir", impressos: "Impressos", despachados: "Despachados" }[sub] || "")
     : mod === "precificacao" && sub === "ml" ? "Mercado Livre" : "";
   $("#titulo").textContent = MODULOS[mod].titulo + (subtitulo ? " · " + subtitulo : "");
   limparErro();
@@ -182,8 +182,12 @@ async function imprimirEtiquetas(ids) {
 // cancelada abre o alerta "Pedido cancelado — não envie" e não imprime.
 // Seleção múltipla: checkbox por linha + "Imprimir selecionadas" (até 20, teto do PDF).
 // O campo esvazia depois de cada leitura; bipar o mesmo código de novo (ou Enter vazio) imprime.
-const expedicao = { lista: [], achado: null, ultimoBipe: "", sel: new Set(), fase: "imprimir", despachados: [] };
-// Fases (submenus): Para imprimir → Impressos → Despachados (bipado na agência, visto no ML).
+const expedicao = { lista: [], achado: null, ultimoBipe: "", sel: new Set(), fase: "imprimir", outros: [] };
+// Fases (submenus): Agendados (ML segura a etiqueta até a data) → Para imprimir → Impressos
+// → Despachados (bipado na agência, visto no ML). Agendados e Despachados só listam.
+const FASES_SO_LISTA = ["agendados", "despachados"];
+/** Data de liberação do ML ("2026-09-28T00:00:00.000Z" é o DIA 28, não 21h do dia 27). */
+const diaLiberacao = (iso) => (iso ? new Date(iso).toLocaleDateString("pt-BR", { timeZone: "UTC", weekday: "short", day: "2-digit", month: "2-digit" }) : "data não informada");
 const FASE_EXP = {
   imprimir: (e) => e.substatus === "ready_to_print",
   impressos: (e) => e.substatus === "printed",
@@ -233,6 +237,12 @@ function fecharCancelado() {
 /** Confere no ML se o pedido do código bipado foi cancelado. true = pode seguir. */
 async function checarCancelamento(codigo) {
   const c = await api("/api/expedicao/checar?codigo=" + encodeURIComponent(codigo));
+  if (c.agendado) {
+    expedicao.achado = null; expedicao.ultimoBipe = "";
+    $("#resultado-bipe").innerHTML = '<div class="nao-achado">Pedido ' + esc(c.pedido || codigo) + " é <b>agendado</b> pelo Mercado Livre: a etiqueta só é liberada " +
+      esc(diaLiberacao(c.liberacao)) + ". Guarde a caixa e não envie antes.</div>";
+    return false;
+  }
   if (c.cancelado) {
     expedicao.achado = null; expedicao.ultimoBipe = "";
     $("#resultado-bipe").innerHTML = '<div class="nao-achado">Pedido ' + esc(c.pedido || codigo) + " CANCELADO — não envie.</div>";
@@ -251,13 +261,14 @@ function casaBipe(e, codigo) {
 }
 
 async function renderExpedicao(sub) {
-  expedicao.fase = FASE_EXP[sub] || sub === "despachados" ? sub : "imprimir";
-  const [d, desp] = await Promise.all([
+  expedicao.fase = FASE_EXP[sub] || FASES_SO_LISTA.includes(sub) ? sub : "imprimir";
+  const soLista = FASES_SO_LISTA.includes(expedicao.fase);
+  const [d, outros] = await Promise.all([
     api("/api/etiquetas"),
-    expedicao.fase === "despachados" ? api("/api/etiquetas?fase=despachados") : Promise.resolve({ etiquetas: [] }),
+    soLista ? api("/api/etiquetas?fase=" + expedicao.fase) : Promise.resolve({ etiquetas: [] }),
   ]);
   expedicao.lista = d.etiquetas; // o bipe procura em tudo que ainda dá para imprimir, qualquer que seja a aba
-  expedicao.despachados = desp.etiquetas;
+  expedicao.outros = outros.etiquetas;
   atualizarContagemExpedicao();
   const prontas = d.etiquetas.filter((e) => e.substatus === "ready_to_print").length;
   $("#conteudo").innerHTML =
@@ -267,8 +278,9 @@ async function renderExpedicao(sub) {
     '<div id="resultado-bipe"></div>' +
     '<div class="cards"><div class="card"><b>' + prontas + '</b><span>Para imprimir</span></div><div class="card"><b>' + (d.etiquetas.length - prontas) + '</b><span>Impressas, aguardando despacho</span></div></div>' +
     (expedicao.fase === "despachados" ? '<p class="dica">Despachados hoje: o ML registrou a entrada do pacote na agência ou coleta.</p>' : "") +
-    '<div class="acoes-sel"' + (expedicao.fase === "despachados" ? " hidden" : "") + '><button type="button" class="primario" id="imprimir-sel" disabled>Imprimir selecionadas</button><span class="dica" id="info-sel"></span></div>' +
-    '<div class="painel"><table><thead><tr><th class="sel">' + (expedicao.fase === "despachados" ? "" : '<input type="checkbox" id="sel-todas" aria-label="Selecionar todas as visíveis">') + '</th><th>Pedido ML</th><th>NF</th><th>Envio</th><th>Venda</th><th class="n">Total</th><th>Situação</th><th></th></tr></thead><tbody id="tb-exp"></tbody></table></div>';
+    (expedicao.fase === "agendados" ? '<p class="dica">Agendados pelo Mercado Livre: a etiqueta só é liberada na data indicada. Separe a caixa e aguarde; a NF sobe sozinha quando o ML liberar.</p>' : "") +
+    '<div class="acoes-sel"' + (soLista ? " hidden" : "") + '><button type="button" class="primario" id="imprimir-sel" disabled>Imprimir selecionadas</button><span class="dica" id="info-sel"></span></div>' +
+    '<div class="painel"><table><thead><tr><th class="sel">' + (soLista ? "" : '<input type="checkbox" id="sel-todas" aria-label="Selecionar todas as visíveis">') + '</th><th>Pedido ML</th><th>NF</th><th>Envio</th><th>Venda</th><th class="n">Total</th><th>Situação</th><th></th></tr></thead><tbody id="tb-exp"></tbody></table></div>';
   // Seleção que ficou de uma lista anterior só vale para envios ainda liberados.
   const ids = new Set(d.etiquetas.map((e) => e.shipment_id));
   expedicao.sel = new Set([...expedicao.sel].filter((id) => ids.has(id)));
@@ -337,6 +349,7 @@ function localizar(codigo) {
 
 function desenharExpedicao() {
   if (expedicao.fase === "despachados") return desenharDespachados();
+  if (expedicao.fase === "agendados") return desenharAgendados();
   const focoId = expedicao.achado && expedicao.achado.shipment_id;
   // O bipe acha em qualquer fase imprimível; sem bipe, a tabela mostra só a aba atual.
   const linhas = focoId ? expedicao.lista.filter((e) => e.shipment_id === focoId) : expedicao.lista.filter(FASE_EXP[expedicao.fase]);
@@ -350,8 +363,15 @@ function desenharExpedicao() {
   atualizarSelecao();
 }
 
+function desenharAgendados() {
+  $("#tb-exp").innerHTML = expedicao.outros.map((e) => "<tr><td></td><td><b>" + esc(e.chave || "—") + "</b></td><td>" + esc(nfDaChave(e.fiscal_key) || "—") +
+    "</td><td>" + esc(e.shipment_id) + "</td><td>" + esc(dtIso(e.data_ml)) + '</td><td class="n">' + brl(e.total) + "</td><td>" +
+    '<span class="tag warn">libera ' + esc(diaLiberacao(e.liberacao)) + "</span></td><td></td></tr>").join("") ||
+    '<tr><td colspan="8" class="mut">Nenhum pedido agendado.</td></tr>';
+}
+
 function desenharDespachados() {
-  $("#tb-exp").innerHTML = expedicao.despachados.map((e) => "<tr><td></td><td><b>" + esc(e.chave || "—") + "</b></td><td>" + esc(nfDaChave(e.fiscal_key) || "—") +
+  $("#tb-exp").innerHTML = expedicao.outros.map((e) => "<tr><td></td><td><b>" + esc(e.chave || "—") + "</b></td><td>" + esc(nfDaChave(e.fiscal_key) || "—") +
     "</td><td>" + esc(e.shipment_id) + "</td><td>" + esc(dtIso(e.data_ml)) + '</td><td class="n">' + brl(e.total) + "</td><td>" +
     '<span class="tag ok">despachado ' + esc(dt(e.despachado_em)) + '</span> <span class="mut">' + esc([e.status, e.substatus].filter(Boolean).join(" / ")) + "</span></td><td></td></tr>").join("") ||
     '<tr><td colspan="8" class="mut">Nenhum envio despachado hoje.</td></tr>';

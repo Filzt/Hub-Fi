@@ -28,6 +28,8 @@ export interface Checagem {
   shipment_id: string | null;
   envio_status: string | null;
   pedidos: Array<{ id: string; status: string }>;
+  agendado: boolean; // pending/buffered: o ML só libera a etiqueta em `liberacao`
+  liberacao: string | null;
 }
 
 const naoAchou = (e: unknown) => /HTTP 404/.test((e as Error).message);
@@ -55,7 +57,10 @@ async function pedidoPelaNf(env: Env, digitos: string): Promise<string | null> {
 export async function checarBipe(env: Env, bruto: string): Promise<Checagem> {
   const codigo = normalizarBipe(bruto);
   if (!codigo) throw new ErroDefinitivo("código vazio");
-  const r: Checagem = { codigo, encontrado: false, cancelado: false, motivo: null, pedido: null, shipment_id: null, envio_status: null, pedidos: [] };
+  const r: Checagem = {
+    codigo, encontrado: false, cancelado: false, motivo: null, pedido: null, shipment_id: null, envio_status: null, pedidos: [],
+    agendado: false, liberacao: null,
+  };
 
   let shipment: Shipment | null = null;
   let orderIds: string[] = [];
@@ -104,6 +109,11 @@ export async function checarBipe(env: Env, bruto: string): Promise<Checagem> {
   } else if (shipment?.status === "cancelled") {
     r.cancelado = true;
     r.motivo = "envio cancelado no Mercado Livre";
+  }
+  if (!r.cancelado && shipment?.status === "pending" && shipment.substatus === "buffered") {
+    r.agendado = true;
+    const lt = await talvez(meliGet<{ buffering?: { date?: string | null } | null }>(env, `/shipments/${shipment.id}/lead_time`));
+    r.liberacao = lt?.buffering?.date ?? null;
   }
   if (r.cancelado) await storeStub(env).log("aviso", pedido, `bipe na expedição de pedido CANCELADO (${codigo}): ${r.motivo}`);
   return r;

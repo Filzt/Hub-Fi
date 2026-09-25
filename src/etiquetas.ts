@@ -32,6 +32,15 @@ type Shipment = {
 export async function atualizarEnvio(env: Env, shipmentId: string): Promise<void> {
   if (!/^\d{6,20}$/.test(shipmentId)) throw new ErroDefinitivo(`shipment_id inválido: ${shipmentId}`);
   const s = await meliGet<Shipment>(env, `/shipments/${shipmentId}`);
+  // Agendado (pending/buffered): a data de liberação da etiqueta está em lead_time.buffering
+  // (conferido no envio 48099041202 em 25/09/2026: buffering.date = segunda 28/09).
+  let liberacao: string | null = null;
+  if (s.status === "pending" && s.substatus === "buffered") {
+    try {
+      const lt = await meliGet<{ buffering?: { date?: string | null } | null }>(env, `/shipments/${shipmentId}/lead_time`);
+      liberacao = lt.buffering?.date ?? null;
+    } catch { /* sem a data, o envio aparece em Agendados assim mesmo */ }
+  }
   await storeStub(env).salvarEnvio({
     shipment_id: String(s.id ?? shipmentId),
     chave: s.pack_id ? String(s.pack_id) : s.order_id ? String(s.order_id) : null,
@@ -39,6 +48,7 @@ export async function atualizarEnvio(env: Env, shipmentId: string): Promise<void
     substatus: s.substatus ?? "",
     logistica: s.logistic_type ?? "",
     despachado_em: despachoDoEnvio(s),
+    liberacao,
   });
 }
 

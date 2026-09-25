@@ -182,6 +182,7 @@ async function rotaApi(req: Request, env: Env, url: URL): Promise<Response> {
   // Etiquetas ---------------------------------------------------------------------
   if (req.method === "GET" && p === "/api/etiquetas") {
     if (url.searchParams.get("fase") === "despachados") return json({ etiquetas: await store.listarDespachados(inicioDoDiaSp()) });
+    if (url.searchParams.get("fase") === "agendados") return json({ etiquetas: await store.listarAgendados() });
     return json({ etiquetas: await store.listarEtiquetas() });
   }
   if (req.method === "GET" && p === "/api/expedicao/contagem") return json(await store.contagemExpedicao(inicioDoDiaSp()));
