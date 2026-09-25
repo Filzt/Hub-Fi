@@ -124,6 +124,44 @@ export class Store extends DurableObject<Env> {
         atualizado_em INTEGER NOT NULL,
         impresso_em INTEGER
       );
+      CREATE TABLE IF NOT EXISTS fichas (
+        pdp TEXT PRIMARY KEY,
+        nome TEXT NOT NULL,
+        grau TEXT NOT NULL DEFAULT '',
+        cor TEXT NOT NULL DEFAULT '',
+        capacidade TEXT NOT NULL DEFAULT '',
+        marca TEXT NOT NULL DEFAULT '',
+        modelo TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL DEFAULT '',
+        parent_id TEXT,
+        pdp_tradicional TEXT,
+        chave TEXT NOT NULL,
+        atualizado_em INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS fichas_chave ON fichas(chave);
+      CREATE TABLE IF NOT EXISTS casamentos (
+        sku TEXT PRIMARY KEY,
+        assinatura TEXT NOT NULL,
+        versao_pool INTEGER NOT NULL,
+        fichas TEXT NOT NULL DEFAULT '[]',
+        motivo TEXT,
+        em INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS publicacoes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        sku TEXT NOT NULL,
+        pdp TEXT NOT NULL,
+        tipo TEXT NOT NULL,
+        preco REAL,
+        qtd INTEGER,
+        status TEXT NOT NULL,
+        mlb TEXT,
+        detalhe TEXT,
+        quem TEXT NOT NULL,
+        em INTEGER NOT NULL,
+        auditado_em INTEGER
+      );
+      CREATE INDEX IF NOT EXISTS publicacoes_sku ON publicacoes(sku);
       CREATE TABLE IF NOT EXISTS funcoes (
         id TEXT PRIMARY KEY,
         nome TEXT NOT NULL,
@@ -173,6 +211,9 @@ export class Store extends DurableObject<Env> {
     // Expedição em 3 fases: marca quando o envio saiu da nossa mão (bipado na agência).
     const colsEnv = new Set(this.sql.exec<{ name: string }>(`PRAGMA table_info(envios)`).toArray().map((c) => c.name));
     if (!colsEnv.has("despachado_em")) this.sql.exec(`ALTER TABLE envios ADD COLUMN despachado_em INTEGER`);
+    // Ficha de catálogo de cada anúncio nosso: trava de duplicata (mesma ficha + mesmo tipo).
+    const colsAn = new Set(this.sql.exec<{ name: string }>(`PRAGMA table_info(anuncios)`).toArray().map((c) => c.name));
+    if (!colsAn.has("catalog_product_id")) this.sql.exec(`ALTER TABLE anuncios ADD COLUMN catalog_product_id TEXT`);
     // Agendado pelo ML (pending/buffered): data em que a etiqueta é liberada (lead_time.buffering.date).
     if (!colsEnv.has("liberacao")) this.sql.exec(`ALTER TABLE envios ADD COLUMN liberacao TEXT`);
     const jaCorrigido = this.sql.exec<{ n: number }>(`SELECT COUNT(*) n FROM meta WHERE chave = 'despacho_v2'`).one().n;
@@ -486,17 +527,107 @@ export class Store extends DurableObject<Env> {
       .toArray().map((r) => r.item_id);
   }
 
-  salvarAnuncios(lista: Array<{ item_id: string; sku: string; status: string; sub_status: string; qtd_ml: number; preco_ml: number | null; listing_type: string }>): void {
+  salvarAnuncios(lista: Array<{ item_id: string; sku: string; status: string; sub_status: string; qtd_ml: number; preco_ml: number | null; listing_type: string; catalog_product_id?: string | null }>): void {
     const agora = Date.now();
     for (const a of lista) {
       this.sql.exec(
-        `INSERT INTO anuncios (item_id, sku, status, sub_status, qtd_ml, preco_ml, listing_type, lido_em)
-         VALUES (?,?,?,?,?,?,?,?)
+        `INSERT INTO anuncios (item_id, sku, status, sub_status, qtd_ml, preco_ml, listing_type, lido_em, catalog_product_id)
+         VALUES (?,?,?,?,?,?,?,?,?)
          ON CONFLICT(item_id) DO UPDATE SET sku=excluded.sku, status=excluded.status, sub_status=excluded.sub_status,
-           qtd_ml=excluded.qtd_ml, preco_ml=excluded.preco_ml, listing_type=excluded.listing_type, lido_em=excluded.lido_em`,
-        a.item_id, a.sku, a.status, a.sub_status, a.qtd_ml, a.preco_ml, a.listing_type, agora,
+           qtd_ml=excluded.qtd_ml, preco_ml=excluded.preco_ml, listing_type=excluded.listing_type, lido_em=excluded.lido_em,
+           catalog_product_id=COALESCE(excluded.catalog_product_id, anuncios.catalog_product_id)`,
+        a.item_id, a.sku, a.status, a.sub_status, a.qtd_ml, a.preco_ml, a.listing_type, agora, a.catalog_product_id ?? null,
       );
     }
+  }
+
+  // ------------------------------------------------------------------ publicação de anúncios
+
+  /** Grava/atualiza fichas de catálogo (importação do pool ou expansão de família). */
+  salvarFichas(lista: Array<{ pdp: string; nome: string; grau: string; cor: string; capacidade: string; marca: string; modelo: string; status: string; parent_id: string | null; pdp_tradicional: string | null; chave: string }>): number {
+    const agora = Date.now();
+    for (const f of lista) {
+      this.sql.exec(
+        `INSERT INTO fichas (pdp, nome, grau, cor, capacidade, marca, modelo, status, parent_id, pdp_tradicional, chave, atualizado_em)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+         ON CONFLICT(pdp) DO UPDATE SET nome=excluded.nome, grau=excluded.grau, cor=excluded.cor, capacidade=excluded.capacidade,
+           marca=excluded.marca, modelo=excluded.modelo, status=excluded.status, parent_id=excluded.parent_id,
+           pdp_tradicional=excluded.pdp_tradicional, chave=excluded.chave, atualizado_em=excluded.atualizado_em`,
+        f.pdp, f.nome, f.grau, f.cor, f.capacidade, f.marca, f.modelo, f.status, f.parent_id, f.pdp_tradicional, f.chave, agora,
+      );
+    }
+    // Pool mudou: casamentos antigos ficam desatualizados (a versão entra na comparação).
+    if (lista.length) this.setMeta("versao_pool", String(Number(this.meta("versao_pool") ?? "0") + 1));
+    return lista.length;
+  }
+
+  fichasDaChave(chaves: string[]) {
+    if (!chaves.length) return [];
+    return this.sql
+      .exec<{ pdp: string; nome: string; grau: string; cor: string; capacidade: string; marca: string; status: string }>(
+        `SELECT pdp, nome, grau, cor, capacidade, marca, status FROM fichas WHERE chave IN (${chaves.map(() => "?").join(",")})`,
+        ...chaves,
+      )
+      .toArray();
+  }
+
+  fichasPorPdp(pdps: string[]) {
+    if (!pdps.length) return [];
+    return this.sql
+      .exec(`SELECT pdp, nome, grau, cor, capacidade, marca, modelo, status, parent_id, pdp_tradicional FROM fichas WHERE pdp IN (${pdps.map(() => "?").join(",")})`, ...pdps)
+      .toArray();
+  }
+
+  contagemFichas(): number {
+    return this.sql.exec<{ n: number }>(`SELECT COUNT(*) n FROM fichas`).one().n;
+  }
+
+  casamentos(): Array<{ sku: string; assinatura: string; versao_pool: number; fichas: string; motivo: string | null; em: number }> {
+    return this.sql.exec<{ sku: string; assinatura: string; versao_pool: number; fichas: string; motivo: string | null; em: number }>(
+      `SELECT sku, assinatura, versao_pool, fichas, motivo, em FROM casamentos`,
+    ).toArray();
+  }
+
+  salvarCasamentos(lista: Array<{ sku: string; assinatura: string; versao_pool: number; fichas: string; motivo: string | null }>): void {
+    const agora = Date.now();
+    for (const c of lista) {
+      this.sql.exec(
+        `INSERT INTO casamentos (sku, assinatura, versao_pool, fichas, motivo, em) VALUES (?,?,?,?,?,?)
+         ON CONFLICT(sku) DO UPDATE SET assinatura=excluded.assinatura, versao_pool=excluded.versao_pool,
+           fichas=excluded.fichas, motivo=excluded.motivo, em=excluded.em`,
+        c.sku, c.assinatura, c.versao_pool, c.fichas, c.motivo, agora,
+      );
+    }
+  }
+
+  /** Anúncios nossos (não encerrados) por ficha e tipo — para a trava de duplicata. */
+  fichasOcupadas(): Array<{ catalog_product_id: string; listing_type: string; item_id: string; sku: string }> {
+    return this.sql.exec<{ catalog_product_id: string; listing_type: string; item_id: string; sku: string }>(
+      `SELECT catalog_product_id, listing_type, item_id, sku FROM anuncios
+       WHERE catalog_product_id IS NOT NULL AND status NOT IN ('closed', 'fora')`,
+    ).toArray();
+  }
+
+  registrarPublicacao(p: { sku: string; pdp: string; tipo: string; preco: number | null; qtd: number | null; status: string; mlb: string | null; detalhe: string | null; quem: string }): number {
+    this.sql.exec(
+      `INSERT INTO publicacoes (sku, pdp, tipo, preco, qtd, status, mlb, detalhe, quem, em) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+      p.sku, p.pdp, p.tipo, p.preco, p.qtd, p.status, p.mlb, p.detalhe, p.quem, Date.now(),
+    );
+    return this.sql.exec<{ id: number }>(`SELECT last_insert_rowid() id`).one().id;
+  }
+
+  marcarAuditoria(id: number, status: string, detalhe: string): void {
+    this.sql.exec(`UPDATE publicacoes SET status = ?, detalhe = ?, auditado_em = ? WHERE id = ?`, status, detalhe, Date.now(), id);
+  }
+
+  listarPublicacoes(limite = 200) {
+    return this.sql.exec(`SELECT id, sku, pdp, tipo, preco, qtd, status, mlb, detalhe, quem, em, auditado_em FROM publicacoes ORDER BY id DESC LIMIT ?`, limite).toArray();
+  }
+
+  publicacoesParaAuditar(maisVelhasQue: number) {
+    return this.sql.exec<{ id: number; sku: string; pdp: string; tipo: string; preco: number | null; mlb: string }>(
+      `SELECT id, sku, pdp, tipo, preco, mlb FROM publicacoes WHERE status = 'criado' AND em < ? ORDER BY id LIMIT 10`, maisVelhasQue,
+    ).toArray();
   }
 
   anunciosAtivos() {

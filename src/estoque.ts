@@ -28,6 +28,7 @@ type ItemMl = {
   available_quantity?: number;
   price?: number;
   listing_type_id?: string;
+  catalog_product_id?: string | null;
   attributes?: Array<{ id: string; value_name?: string | null }>;
 };
 
@@ -41,6 +42,7 @@ function paraAnuncio(b: ItemMl): AnuncioSync {
     qtd_ml: Number(b.available_quantity ?? 0),
     preco_ml: b.price == null ? null : Number(b.price),
     listing_type: b.listing_type_id ?? "",
+    catalog_product_id: b.catalog_product_id ?? null,
   };
 }
 
@@ -50,7 +52,7 @@ async function lerItens(env: Env, ids: string[]): Promise<AnuncioSync[]> {
   for (let i = 0; i < ids.length; i += 20) {
     const lote = ids.slice(i, i + 20).join(",");
     const r = await meliGet<Array<{ code: number; body: ItemMl }>>(
-      env, `/items?ids=${lote}&attributes=id,status,sub_status,available_quantity,price,listing_type_id,attributes`,
+      env, `/items?ids=${lote}&attributes=id,status,sub_status,available_quantity,price,listing_type_id,catalog_product_id,attributes`,
     );
     for (const x of r) if (x.code === 200 && x.body?.id) out.push(paraAnuncio(x.body));
   }

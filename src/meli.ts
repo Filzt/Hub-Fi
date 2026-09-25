@@ -160,9 +160,9 @@ export { tokenStub };
  */
 export async function meliEnviar(
   env: Env,
-  metodo: "POST" | "PUT",
+  metodo: "POST" | "PUT" | "DELETE",
   caminho: string,
-  corpo: BodyInit,
+  corpo: BodyInit | null,
   contentType?: string,
 ): Promise<{ status: number; corpo: any }> {
   for (let tentativa = 0; tentativa < 2; tentativa++) {

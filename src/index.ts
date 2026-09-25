@@ -3,6 +3,8 @@
 import { rotaAdmin } from "./admin.ts";
 import { moduloDaRota, MODULOS as MODULOS_TODOS, pode, type Modulo, type Quem, verificarJwt } from "./auth.ts";
 import { checarBipe } from "./expedicao.ts";
+import { adicionarFamilia, atualizarCandidatos, auditarPublicacoes, casarPendentes, conferir, fila as filaPublicacao,
+  importarFichas, processarFilaFichas, publicar } from "./publicacao.ts";
 import { TOPICOS_ACEITOS } from "./config.ts";
 import { tokenStub } from "./meli.ts";
 import { cancelarNoErp, confirmarPedidoErp, gravarPedido, processarEvento, processarPedido } from "./processamento.ts";
@@ -12,7 +14,7 @@ import { precoAlvo, REGUA_PRECO, LIMITES_REGUA, simularReguas, validarReguas, ty
 import { atualizarEnviosPendentes, baixarEtiquetas } from "./etiquetas.ts";
 import { processarNf, varrerNfs } from "./nf.ts";
 import { storeStub } from "./store.ts";
-import type { Env } from "./tipos.ts";
+import { type Env, ErroTemporario } from "./tipos.ts";
 
 export { MeliToken } from "./meli.ts";
 export { Store } from "./store.ts";
@@ -230,6 +232,31 @@ async function rotaApi(req: Request, env: Env, url: URL): Promise<Response> {
     return json({ etiquetas: await store.listarEtiquetas() });
   }
   if (req.method === "GET" && p === "/api/expedicao/contagem") return json(await store.contagemExpedicao(inicioDoDiaSp()));
+  // Publicação de anúncios pelo SKU ----------------------------------------------
+  if (req.method === "GET" && p === "/api/publicacao/fila") return json(await filaPublicacao(env));
+  if (req.method === "POST" && p === "/api/publicacao/atualizar") {
+    const n = await atualizarCandidatos(env);
+    const casados = await casarPendentes(env, 60);
+    return json({ candidatos: n, casados });
+  }
+  r = m(/^\/api\/publicacao\/sku\/([A-Za-z0-9._-]{1,40})$/);
+  if (req.method === "GET" && r) return json(await conferir(env, r[1].toUpperCase()));
+  if (req.method === "POST" && p === "/api/publicacao/publicar") {
+    try {
+      return json(await publicar(env, quem, (await req.json().catch(() => ({}))) as Record<string, unknown>));
+    } catch (e) {
+      return json({ erro: (e as Error).message }, e instanceof ErroTemporario ? 503 : 409);
+    }
+  }
+  if (req.method === "POST" && p === "/api/publicacao/familia") {
+    const b = (await req.json().catch(() => ({}))) as { link?: string };
+    try { return json(await adicionarFamilia(env, String(b.link ?? ""))); } catch (e) { return json({ erro: (e as Error).message }, 400); }
+  }
+  if (req.method === "POST" && p === "/api/publicacao/fichas/importar") {
+    const b = (await req.json().catch(() => ({}))) as { linhas?: Array<Record<string, unknown>> };
+    return json({ gravadas: await importarFichas(env, b.linhas ?? []) });
+  }
+
   // Expedição: cada bipe confere no ML, ao vivo, se a venda foi cancelada.
   if (req.method === "GET" && p === "/api/expedicao/checar") {
     return json(await checarBipe(env, String(url.searchParams.get("codigo") ?? "").slice(0, 200)));
@@ -360,6 +387,18 @@ export default {
       await sincronizarEstoque(env);
     } catch (e) {
       await store.log("erro", null, `sincronização de estoque/preço falhou: ${(e as Error).message}`);
+    }
+    // Publicação pelo SKU: candidatos do Sankhya 1x por hora; casamento, fichas e auditoria
+    // aos poucos a cada rodada (poucos subrequests — o resto do cron já usa bastante).
+    try {
+      const erp = await store.meta("pub_erp");
+      const em = erp ? Number(JSON.parse(erp).em ?? 0) : 0;
+      if (Date.now() - em > 60 * 60_000) await atualizarCandidatos(env);
+      await casarPendentes(env, 40);
+      await processarFilaFichas(env, 8);
+      await auditarPublicacoes(env);
+    } catch (e) {
+      await store.log("erro", null, `publicação (fila/casamento/auditoria) falhou: ${(e as Error).message}`);
     }
   },
 } satisfies ExportedHandler<Env>;

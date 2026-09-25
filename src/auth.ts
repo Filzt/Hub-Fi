@@ -11,7 +11,7 @@
 
 import type { Env } from "./tipos.ts";
 
-export const MODULOS = ["pedidos", "expedicao", "produtos", "precificacao", "integracao"] as const;
+export const MODULOS = ["pedidos", "expedicao", "produtos", "publicacao", "precificacao", "integracao"] as const;
 export type Modulo = (typeof MODULOS)[number];
 
 export interface Quem {
@@ -83,6 +83,8 @@ export function moduloDaRota(metodo: string, p: string): Modulo | "admin" | "sis
   if (p.startsWith("/api/etiquetas") || p.startsWith("/api/expedicao/")) return "expedicao";
   if (p === "/api/produtos" || p.startsWith("/api/estoque")) return "produtos";
   if (p.startsWith("/api/reguas")) return "precificacao";
+  if (p === "/api/publicacao/fichas/importar") return "admin";
+  if (p.startsWith("/api/publicacao/")) return "publicacao";
   if (p === "/api/integracao" || p === "/api/saude" || p.startsWith("/api/nfs") || p.startsWith("/api/eventos") ||
       p === "/api/log" || p === "/api/meli/status") return "integracao";
   void metodo;

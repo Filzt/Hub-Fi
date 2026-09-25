@@ -230,3 +230,19 @@ tr.inativo td { opacity: .6; }
 .link-senha { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .link-senha > div { flex: 1 1 280px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .link-senha input { width: 100%; font-size: 12px; }
+
+/* ------------------------------------------------------------------ publicar anúncios */
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip-filtro { padding: 5px 12px; border-radius: 16px; font-size: 13px; }
+.chip-filtro.ativo { background: var(--info); border-color: var(--info); color: #fff; }
+.barra.familia { margin: 6px 0 10px; }
+.barra.familia input { flex: 1 1 320px; min-width: 0; }
+.ficha { display: flex; gap: 10px; align-items: flex-start; border: 1px solid var(--bd); border-radius: 8px; padding: 8px; margin-bottom: 8px; cursor: pointer; }
+.ficha:has(input:checked) { border-color: var(--info); box-shadow: 0 0 0 2px var(--info-bg); }
+.ficha.indisponivel { opacity: .6; cursor: not-allowed; }
+.ficha input { margin-top: 4px; }
+.ficha img, .ficha .sem-foto { width: 72px; height: 72px; object-fit: contain; border-radius: 6px; background: #fff; flex: 0 0 72px; }
+.ficha .sem-foto { display: flex; align-items: center; justify-content: center; font-size: 11px; color: var(--mut); background: var(--bg); }
+.ficha-txt { display: flex; flex-direction: column; gap: 3px; min-width: 0; font-size: 13px; overflow-wrap: anywhere; }
+.tipos { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 12px; }
+#form-publicar h3 { font-size: 14px; margin: 14px 0 6px; }

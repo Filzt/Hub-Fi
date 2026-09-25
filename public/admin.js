@@ -2,7 +2,7 @@
 // Carregado antes do app.js; usa $, esc, api, post, erro e navegar de lá (em tempo de execução).
 "use strict";
 
-const NOMES_MODULO = { pedidos: "Pedidos", expedicao: "Expedição", produtos: "Produtos", precificacao: "Precificação", integracao: "Integração" };
+const NOMES_MODULO = { pedidos: "Pedidos", expedicao: "Expedição", produtos: "Produtos", publicacao: "Publicar anúncios", precificacao: "Precificação", integracao: "Integração" };
 
 async function renderAdmin(sub) {
   if (sub === "funcoes") return renderFuncoes();

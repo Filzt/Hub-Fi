@@ -28,6 +28,7 @@ export interface AnuncioSync {
   qtd_ml: number;
   preco_ml: number | null;
   listing_type: string;
+  catalog_product_id?: string | null; // ficha de catálogo (trava de duplicata na publicação)
 }
 
 export interface ErpSku {

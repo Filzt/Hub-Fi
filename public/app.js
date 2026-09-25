@@ -80,6 +80,7 @@ const MODULOS = {
   pedidos: { titulo: "Pedidos", render: renderPedidos },
   expedicao: { titulo: "Expedição", render: renderExpedicao },
   produtos: { titulo: "Produtos", render: renderProdutos },
+  publicacao: { titulo: "Publicar anúncios", render: renderPublicacao },
   precificacao: { titulo: "Precificação", render: renderPrecificacao },
   integracao: { titulo: "Integração", render: renderIntegracao },
   admin: { titulo: "Administração", render: renderAdmin },
@@ -88,7 +89,7 @@ const MODULOS = {
 function rota() {
   const [mod, sub] = (location.hash.replace(/^#/, "") || "pedidos").split("/");
   const m = MODULOS[mod] ? mod : "pedidos";
-  return { mod: m, sub: sub || (m === "integracao" ? "visao" : m === "expedicao" ? "imprimir" : m === "admin" ? "usuarios" : "") };
+  return { mod: m, sub: sub || (m === "integracao" ? "visao" : m === "expedicao" ? "imprimir" : m === "admin" ? "usuarios" : m === "publicacao" ? "fila" : "") };
 }
 
 async function navegar() {
@@ -105,11 +106,14 @@ async function navegar() {
   $$("#sub-integracao a").forEach((a) => a.classList.toggle("ativo", mod === "integracao" && a.dataset.sub === sub));
   $("#sub-expedicao").classList.toggle("aberto", mod === "expedicao");
   $("#sub-admin").classList.toggle("aberto", mod === "admin");
+  $("#sub-publicacao").classList.toggle("aberto", mod === "publicacao");
+  $$("#sub-publicacao a").forEach((a) => a.classList.toggle("ativo", mod === "publicacao" && a.dataset.sub === sub));
   $$("#sub-admin a").forEach((a) => a.classList.toggle("ativo", mod === "admin" && a.dataset.sub === sub));
   $$("#sub-expedicao a").forEach((a) => a.classList.toggle("ativo", mod === "expedicao" && a.dataset.sub === sub));
   const subtitulo = mod === "integracao" ? ({ visao: "Visão geral", nfs: "NF-e → ML", logs: "Logs", eventos: "Eventos" }[sub] || "")
     : mod === "expedicao" ? ({ agendados: "Agendados", imprimir: "Para imprimir", impressos: "Impressos", despachados: "Despachados" }[sub] || "")
     : mod === "admin" ? ({ usuarios: "Usuários", funcoes: "Funções" }[sub] || "")
+    : mod === "publicacao" ? ({ fila: "Fila", historico: "Histórico" }[sub] || "")
     : mod === "precificacao" && sub === "ml" ? "Mercado Livre" : "";
   $("#titulo").textContent = MODULOS[mod].titulo + (subtitulo ? " · " + subtitulo : "");
   limparErro();
