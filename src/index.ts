@@ -1,5 +1,7 @@
 // skyhub — entrada do Worker: webhook do ML, API do painel e cron de reprocessamento.
 
+import { rotaAdmin } from "./admin.ts";
+import { moduloDaRota, MODULOS as MODULOS_TODOS, pode, type Modulo, type Quem, verificarJwt } from "./auth.ts";
 import { checarBipe } from "./expedicao.ts";
 import { TOPICOS_ACEITOS } from "./config.ts";
 import { tokenStub } from "./meli.ts";
@@ -22,12 +24,41 @@ const json = (dados: unknown, status = 200) =>
   });
 
 /** Comparação em tempo constante do ADMIN_TOKEN (hash dos dois lados). */
-async function autorizado(req: Request, env: Env): Promise<boolean> {
-  const recebido = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
+async function ehTokenDoSistema(recebido: string, env: Env): Promise<boolean> {
   if (!env.ADMIN_TOKEN || !recebido) return false;
   const h = async (s: string) => new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s)));
   const [a, b] = await Promise.all([h(recebido), h(env.ADMIN_TOKEN)]);
   return crypto.subtle.timingSafeEqual(a, b);
+}
+
+/**
+ * Quem está chamando a API: o ADMIN_TOKEN (scripts) ou uma pessoa logada pelo Supabase
+ * e cadastrada no SkyHub. `motivo` explica a recusa (401 sem login, 403 sem acesso).
+ */
+async function identificar(req: Request, env: Env): Promise<{ quem: Quem } | { motivo: string; status: number }> {
+  const recebido = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "").trim();
+  if (!recebido) return { motivo: "faça login", status: 401 };
+  if (await ehTokenDoSistema(recebido, env)) {
+    return { quem: { tipo: "sistema", id: "sistema", email: "sistema", nome: "Sistema", funcao: null, admin: true, modulos: [] } };
+  }
+  const claims = await verificarJwt(env, recebido);
+  if (!claims) return { motivo: "sessão expirada ou inválida — faça login de novo", status: 401 };
+  const store = storeStub(env);
+  let u = await store.usuario(claims.sub);
+  // 1º acesso do administrador inicial (ADMIN_INICIAL): entra já como Administrador.
+  const email = String(claims.email ?? "").toLowerCase();
+  if (!u && email && email === String(env.ADMIN_INICIAL ?? "").toLowerCase()) {
+    await store.salvarUsuario({ id: claims.sub, email, nome: email.split("@")[0], funcao: "administrador", ativo: true });
+    await store.log("info", null, `administrador inicial registrado: ${email}`);
+    u = await store.usuario(claims.sub);
+  }
+  if (!u) return { motivo: "seu e-mail ainda não tem acesso ao SkyHub — peça a um administrador", status: 403 };
+  if (!u.ativo) return { motivo: "seu acesso ao SkyHub está desativado", status: 403 };
+  const f = await store.funcao(u.funcao);
+  await store.marcarAcesso(u.id);
+  return {
+    quem: { tipo: "usuario", id: u.id, email: u.email, nome: u.nome, funcao: f?.nome ?? u.funcao, admin: !!f?.admin, modulos: (f?.modulos ?? []) as Modulo[] },
+  };
 }
 
 async function webhook(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
@@ -57,10 +88,23 @@ async function webhook(req: Request, env: Env, ctx: ExecutionContext): Promise<R
 }
 
 async function rotaApi(req: Request, env: Env, url: URL): Promise<Response> {
-  if (!(await autorizado(req, env))) return json({ erro: "não autorizado" }, 401);
+  const id = await identificar(req, env);
+  if ("motivo" in id) return json({ erro: id.motivo }, id.status);
+  const { quem } = id;
   const store = storeStub(env);
   const p = url.pathname;
   const m = (re: RegExp) => p.match(re);
+  if (!pode(quem, moduloDaRota(req.method, p))) return json({ erro: "sua função não tem acesso a esta tela" }, 403);
+  // Rastro de quem fez cada ação (a leitura não entra, para não encher o log).
+  if (req.method !== "GET" && quem.tipo === "usuario") await store.log("info", null, `${req.method} ${p} por ${quem.email}`);
+
+  if (req.method === "GET" && p === "/api/eu") {
+    return json({ id: quem.id, email: quem.email, nome: quem.nome, funcao: quem.funcao, admin: quem.admin, modulos: quem.admin ? MODULOS_TODOS : quem.modulos });
+  }
+  if (p.startsWith("/api/admin/")) {
+    const res = await rotaAdmin(req, env, url, quem, store);
+    if (res) return res;
+  }
 
   if (req.method === "GET" && p === "/api/saude") {
     return json({ modo: env.MODO, meli: await tokenStub(env).status(), store: await store.saude() });
@@ -281,13 +325,15 @@ export default {
         // Diagnóstico público: só diz QUAIS secrets existem e um prefixo do hash do
         // ADMIN_TOKEN (32 bits de um SHA-256) para conferir com o cofre. Nenhum valor.
         const nomes = ["MELI_CLIENT_ID", "MELI_CLIENT_SECRET", "SANKHYA_CLIENT_ID",
-          "SANKHYA_CLIENT_SECRET", "SANKHYA_XTOKEN", "ADMIN_TOKEN"] as const;
+          "SANKHYA_CLIENT_SECRET", "SANKHYA_XTOKEN", "ADMIN_TOKEN", "SUPABASE_SECRET_KEY"] as const;
         const presentes = Object.fromEntries(nomes.map((n) => [n, Boolean(env[n])]));
         const hash = env.ADMIN_TOKEN
           ? [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(env.ADMIN_TOKEN)))]
               .slice(0, 4).map((b) => b.toString(16).padStart(2, "0")).join("")
           : null;
-        return json({ modo: env.MODO, secrets: presentes, adminTokenSha256Prefixo: hash });
+        // URL e chave PUBLICÁVEL do Supabase são públicas por natureza (o login do painel usa).
+        return json({ modo: env.MODO, secrets: presentes, adminTokenSha256Prefixo: hash,
+          supabase: { url: env.SUPABASE_URL, chavePublicavel: env.SUPABASE_PUBLISHABLE_KEY } });
       }
       if (url.pathname.startsWith("/api/")) return await rotaApi(req, env, url);
       if (url.pathname === "/painel") return Response.redirect(new URL("/", url).toString(), 302);

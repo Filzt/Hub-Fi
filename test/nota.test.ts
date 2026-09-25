@@ -165,10 +165,12 @@ test("parceiro bloqueia sem CEP na TSICEP ou documento inválido", () => {
   assert.match(montarParceiro(billing({ identification: { type: "CPF", number: "123" } }), cep).bloqueio!, /documento/);
 });
 
-test("o JavaScript do painel (public/app.js) é válido", async () => {
+test("o JavaScript do painel (app.js, login.js, admin.js) é válido", async () => {
   const { readFileSync } = await import("node:fs");
-  const js = readFileSync(new URL("../public/app.js", import.meta.url), "utf8");
-  assert.doesNotThrow(() => new Function(js));
+  for (const arq of ["app.js", "login.js", "admin.js"]) {
+    const js = readFileSync(new URL("../public/" + arq, import.meta.url), "utf8");
+    assert.doesNotThrow(() => new Function(js), arq);
+  }
 });
 
 test("fases do pedido na esteira", async () => {

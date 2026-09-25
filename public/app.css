@@ -180,3 +180,53 @@ tr.sel td { background: var(--info-bg); }
 /* Botão de atualizar só com ícone + hora da última atualização */
 button.icone { padding: 4px 10px; font-size: 17px; line-height: 1.2; min-width: 34px; }
 .atualizado { font-size: 12px; white-space: nowrap; }
+
+/* ------------------------------------------------------------------ login */
+.tela-login { position: fixed; inset: 0; z-index: 30; background: var(--bg); display: flex; align-items: center; justify-content: center; padding: 16px; overflow-y: auto; }
+.tela-login[hidden] { display: none; }
+.login-caixa { width: min(380px, 100%); background: var(--card); border: 1px solid var(--bd); border-radius: 12px; padding: 24px 20px; box-shadow: 0 8px 30px #0000001a; }
+.login-marca { display: flex; flex-direction: column; align-items: center; margin-bottom: 14px; }
+.login-marca .logo-skyhub { font-size: 24px; font-weight: 800; }
+.login-marca .sub { color: var(--mut); font-size: 12px; }
+.login-caixa form { display: flex; flex-direction: column; gap: 6px; }
+.login-caixa form[hidden] { display: none; }
+.login-caixa h1 { font-size: 18px; margin: 4px 0 8px; }
+.login-caixa label { font-size: 13px; color: var(--mut); margin-top: 4px; }
+.login-caixa input { width: 100%; font-size: 15px; padding: 9px 10px; }
+.login-caixa button[type=submit] { margin-top: 10px; padding: 10px; font-size: 15px; }
+.login-caixa a { align-self: center; margin-top: 8px; font-size: 13px; color: var(--info); }
+.login-caixa p.mut { font-size: 13px; margin: 2px 0; }
+.login-msg { min-height: 18px; margin: 12px 0 0; font-size: 13px; text-align: center; }
+.login-msg.erro { color: var(--err); }
+.login-msg.ok { color: var(--ok); }
+
+/* usuário logado, na lateral */
+.usuario { margin-top: auto; display: flex; flex-direction: column; gap: 2px; font-size: 13px; padding: 0 6px; }
+.usuario[hidden] { display: none; }
+.usuario-nome { font-weight: 600; overflow-wrap: anywhere; }
+.usuario-funcao { color: var(--lat-mut); font-size: 12px; }
+.usuario-acoes { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+.usuario-acoes button { background: #ffffff18; border-color: #ffffff30; color: var(--lat-tx); font-size: 12px; padding: 4px 8px; }
+nav a[hidden] { display: none; }
+
+.aviso { position: fixed; right: 16px; bottom: 16px; z-index: 25; background: var(--ok); color: #fff; padding: 10px 14px; border-radius: 8px; font-size: 14px; max-width: calc(100vw - 32px); }
+.aviso[hidden] { display: none; }
+
+/* ------------------------------------------------------------------ administração */
+.form-grade { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; align-items: end; }
+.form-grade label, .form-funcao label:not(.check) { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--mut); }
+.form-grade input, .form-grade select { font-size: 14px; }
+.form-funcao { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
+.form-funcao[hidden] { display: none; }
+.form-funcao h4 { margin: 0; font-size: 14px; }
+.modulos { display: flex; flex-wrap: wrap; gap: 8px 16px; }
+.check { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; cursor: pointer; }
+.check.forte { font-weight: 600; }
+.check input { width: 16px; height: 16px; }
+.acoes { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.topo-funcao { display: flex; gap: 12px; align-items: end; flex-wrap: wrap; }
+.acoes-linha { display: flex; gap: 6px; flex-wrap: wrap; }
+tr.inativo td { opacity: .6; }
+.link-senha { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.link-senha > div { flex: 1 1 280px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.link-senha input { width: 100%; font-size: 12px; }

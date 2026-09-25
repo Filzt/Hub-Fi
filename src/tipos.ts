@@ -10,6 +10,10 @@ export interface Env {
   MELI_API: string;
   MELI_USER_ID: string;
   SANKHYA_API: string;
+  SUPABASE_URL: string; // login do painel (Supabase Auth)
+  SUPABASE_PUBLISHABLE_KEY: string; // pública: vai para o navegador
+  ADMIN_INICIAL: string; // e-mail que entra como Administrador no 1º acesso
+  PAINEL_URL: string; // retorno do link de senha
 
   MELI_CLIENT_ID: string;
   MELI_CLIENT_SECRET: string;
@@ -17,6 +21,7 @@ export interface Env {
   SANKHYA_CLIENT_SECRET: string;
   SANKHYA_XTOKEN: string;
   ADMIN_TOKEN: string;
+  SUPABASE_SECRET_KEY: string; // só no Worker: cria usuário e gera link de senha
 
   MELI_TOKEN: DurableObjectNamespace<MeliToken>;
   STORE: DurableObjectNamespace<Store>;

@@ -38,6 +38,7 @@ MAPA = [  # secret no Worker -> chave no cofre
     ("SANKHYA_CLIENT_SECRET", "SANKHYA_SKYLINE_CLIENT_SECRET"),
     ("SANKHYA_XTOKEN", "SANKHYA_SKYLINE_XTOKEN"),
     ("ADMIN_TOKEN", "SKYHUB_ADMIN_TOKEN"),
+    ("SUPABASE_SECRET_KEY", "SUPABASE_SKYHUB_SECRET_KEY"),  # login do painel (25/09/2026)
 ]
 
 
@@ -60,13 +61,17 @@ def main() -> int:
     env["CLOUDFLARE_ACCOUNT_ID"] = do_cofre_ou_pergunta(
         "CLOUDFLARE_ACCOUNT_ID", "Account ID da Cloudflare", False)
 
-    faltando = [c for _, c in MAPA if not (keyring.get_password(SERVICO, c) or "").strip()]
+    so = set(sys.argv[1:])
+    mapa = [(n, c) for n, c in MAPA if not so or n in so]
+    if so - {n for n, _ in MAPA}:
+        sys.exit("ERRO: secret desconhecido: " + ", ".join(sorted(so - {n for n, _ in MAPA})))
+    faltando = [c for _, c in mapa if not (keyring.get_password(SERVICO, c) or "").strip()]
     if faltando:
         sys.exit("ERRO: chaves ausentes no cofre: " + ", ".join(faltando)
                  + " (ADMIN_TOKEN: rode scripts\\copiar_secrets.py uma vez para gerar)")
 
     npx = "npx.cmd" if os.name == "nt" else "npx"  # evita o shim .ps1 (ExecutionPolicy)
-    for nome, chave in MAPA:
+    for nome, chave in mapa:
         valor = keyring.get_password(SERVICO, chave).strip()
         r = subprocess.run([npx, "wrangler", "secret", "put", nome], cwd=RAIZ, env=env,
                            input=valor, text=True, capture_output=True)
@@ -77,7 +82,8 @@ def main() -> int:
             print("   ", (r.stderr or r.stdout).strip()[-400:])
             return 1
 
-    with urllib.request.urlopen(f"{URL_WORKER}/config", timeout=30) as resp:
+    req = urllib.request.Request(f"{URL_WORKER}/config", headers={"User-Agent": "skyhub-secrets"})  # UA padrão do urllib leva 403
+    with urllib.request.urlopen(req, timeout=30) as resp:
         cfg = json.load(resp)
     print("\nWorker /config:", json.dumps(cfg["secrets"]))
     return 0 if all(cfg["secrets"].values()) else 1

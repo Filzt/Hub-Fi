@@ -124,6 +124,24 @@ export class Store extends DurableObject<Env> {
         atualizado_em INTEGER NOT NULL,
         impresso_em INTEGER
       );
+      CREATE TABLE IF NOT EXISTS funcoes (
+        id TEXT PRIMARY KEY,
+        nome TEXT NOT NULL,
+        modulos TEXT NOT NULL DEFAULT '[]',
+        admin INTEGER NOT NULL DEFAULT 0,
+        criado_em INTEGER NOT NULL,
+        atualizado_em INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS usuarios (
+        id TEXT PRIMARY KEY,
+        email TEXT NOT NULL UNIQUE,
+        nome TEXT NOT NULL DEFAULT '',
+        funcao TEXT NOT NULL,
+        ativo INTEGER NOT NULL DEFAULT 1,
+        criado_em INTEGER NOT NULL,
+        atualizado_em INTEGER NOT NULL,
+        ultimo_acesso INTEGER
+      );
       CREATE TABLE IF NOT EXISTS meta (
         chave TEXT PRIMARY KEY,
         valor TEXT
@@ -146,6 +164,12 @@ export class Store extends DurableObject<Env> {
                                 ["cancelamento", "TEXT"], ["cancelamento_em", "INTEGER"]]) {
       if (!cols.has(nome)) this.sql.exec(`ALTER TABLE pedidos ADD COLUMN ${nome} ${tipo}`);
     }
+    // Função de administrador sempre existe (acesso a tudo + telas de usuários e funções).
+    const agora = Date.now();
+    this.sql.exec(
+      `INSERT OR IGNORE INTO funcoes (id, nome, modulos, admin, criado_em, atualizado_em) VALUES ('administrador', 'Administrador', '[]', 1, ?, ?)`,
+      agora, agora,
+    );
     // Expedição em 3 fases: marca quando o envio saiu da nossa mão (bipado na agência).
     const colsEnv = new Set(this.sql.exec<{ name: string }>(`PRAGMA table_info(envios)`).toArray().map((c) => c.name));
     if (!colsEnv.has("despachado_em")) this.sql.exec(`ALTER TABLE envios ADD COLUMN despachado_em INTEGER`);
@@ -370,6 +394,73 @@ export class Store extends DurableObject<Env> {
     return (this.sql
       .exec<{ em: number; nivel: string; msg: string }>(`SELECT em, nivel, msg FROM log WHERE msg LIKE ? ORDER BY id DESC LIMIT 1`, padrao)
       .toArray()[0]) ?? null;
+  }
+
+  // ------------------------------------------------------------------ funções e usuários
+
+  listarFuncoes(): Array<{ id: string; nome: string; modulos: string[]; admin: boolean; usuarios: number }> {
+    return this.sql
+      .exec<{ id: string; nome: string; modulos: string; admin: number; usuarios: number }>(
+        `SELECT f.id, f.nome, f.modulos, f.admin, (SELECT COUNT(*) FROM usuarios u WHERE u.funcao = f.id) usuarios
+         FROM funcoes f ORDER BY f.admin DESC, f.nome`,
+      )
+      .toArray()
+      .map((f) => ({ id: f.id, nome: f.nome, modulos: JSON.parse(f.modulos || "[]"), admin: f.admin === 1, usuarios: f.usuarios }));
+  }
+
+  funcao(id: string): { id: string; nome: string; modulos: string[]; admin: boolean } | null {
+    return this.listarFuncoes().find((f) => f.id === id) ?? null;
+  }
+
+  salvarFuncao(f: { id: string; nome: string; modulos: string[]; admin: boolean }): void {
+    const agora = Date.now();
+    this.sql.exec(
+      `INSERT INTO funcoes (id, nome, modulos, admin, criado_em, atualizado_em) VALUES (?,?,?,?,?,?)
+       ON CONFLICT(id) DO UPDATE SET nome = excluded.nome, modulos = excluded.modulos, admin = excluded.admin, atualizado_em = excluded.atualizado_em`,
+      f.id, f.nome, JSON.stringify(f.modulos), f.admin ? 1 : 0, agora, agora,
+    );
+  }
+
+  removerFuncao(id: string): void {
+    this.sql.exec(`DELETE FROM funcoes WHERE id = ? AND id <> 'administrador' AND NOT EXISTS (SELECT 1 FROM usuarios WHERE funcao = ?)`, id, id);
+  }
+
+  usuario(id: string): { id: string; email: string; nome: string; funcao: string; ativo: boolean } | null {
+    const u = this.sql.exec<{ id: string; email: string; nome: string; funcao: string; ativo: number }>(
+      `SELECT id, email, nome, funcao, ativo FROM usuarios WHERE id = ?`, id,
+    ).toArray()[0];
+    return u ? { ...u, ativo: u.ativo === 1 } : null;
+  }
+
+  listarUsuarios(): Array<{ id: string; email: string; nome: string; funcao: string; ativo: boolean; criado_em: number; ultimo_acesso: number | null }> {
+    return this.sql
+      .exec<{ id: string; email: string; nome: string; funcao: string; ativo: number; criado_em: number; ultimo_acesso: number | null }>(
+        `SELECT id, email, nome, funcao, ativo, criado_em, ultimo_acesso FROM usuarios ORDER BY ativo DESC, nome, email`,
+      )
+      .toArray()
+      .map((u) => ({ ...u, ativo: u.ativo === 1 }));
+  }
+
+  salvarUsuario(u: { id: string; email: string; nome: string; funcao: string; ativo: boolean }): void {
+    const agora = Date.now();
+    this.sql.exec(
+      `INSERT INTO usuarios (id, email, nome, funcao, ativo, criado_em, atualizado_em) VALUES (?,?,?,?,?,?,?)
+       ON CONFLICT(id) DO UPDATE SET email = excluded.email, nome = excluded.nome, funcao = excluded.funcao,
+         ativo = excluded.ativo, atualizado_em = excluded.atualizado_em`,
+      u.id, u.email.toLowerCase(), u.nome, u.funcao, u.ativo ? 1 : 0, agora, agora,
+    );
+  }
+
+  /** Registra o acesso (no máximo 1 gravação a cada 5 min por pessoa, para poupar escrita). */
+  marcarAcesso(id: string): void {
+    const agora = Date.now();
+    this.sql.exec(`UPDATE usuarios SET ultimo_acesso = ? WHERE id = ? AND COALESCE(ultimo_acesso, 0) < ?`, agora, id, agora - 5 * 60_000);
+  }
+
+  adminsAtivos(): number {
+    return this.sql.exec<{ n: number }>(
+      `SELECT COUNT(*) n FROM usuarios u JOIN funcoes f ON f.id = u.funcao WHERE u.ativo = 1 AND f.admin = 1`,
+    ).one().n;
   }
 
   meta(chave: string): string | null {

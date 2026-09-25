@@ -28,11 +28,16 @@
         <a href="#integracao/logs" data-sub="logs">Logs</a>
         <a href="#integracao/eventos" data-sub="eventos">Eventos</a>
       </div>
+      <a href="#admin/usuarios" data-mod="admin" hidden>Administração</a>
+      <div class="submenu" id="sub-admin">
+        <a href="#admin/usuarios" data-sub="usuarios">Usuários</a>
+        <a href="#admin/funcoes" data-sub="funcoes">Funções</a>
+      </div>
     </nav>
-    <div class="acesso">
-      <label for="tk">Token de acesso</label>
-      <input id="tk" type="password" autocomplete="off" placeholder="cole o token">
-      <button id="entrar" type="button">Entrar</button>
+    <div class="usuario" id="usuario" hidden>
+      <div class="usuario-nome" id="usuario-nome"></div>
+      <div class="usuario-funcao" id="usuario-funcao"></div>
+      <div class="usuario-acoes"><button type="button" id="trocar-senha">Trocar senha</button><button type="button" id="sair">Sair</button></div>
     </div>
   </aside>
   <main>
@@ -41,7 +46,7 @@
       <div id="modos" class="modos"></div>
     </header>
     <div id="msg" role="alert"></div>
-    <section id="conteudo"><p class="vazio">Informe o token de acesso para carregar.</p></section>
+    <section id="conteudo"></section>
   </main>
 </div>
 <div id="gaveta" class="gaveta" hidden>
@@ -60,6 +65,43 @@
     <button type="button" id="ok-cancelado" class="primario">Entendi, separar a caixa</button>
   </div>
 </div>
+<div id="aviso" class="aviso" role="status" hidden></div>
+<div id="tela-login" class="tela-login">
+  <div class="login-caixa">
+    <div class="login-marca"><span class="logo-skyhub">SkyHub</span><span class="sub">ML ↔ Sankhya</span></div>
+    <form id="form-entrar" autocomplete="on">
+      <h1>Entrar</h1>
+      <label for="login-email">E-mail</label>
+      <input id="login-email" type="email" autocomplete="username" required>
+      <label for="login-senha">Senha</label>
+      <input id="login-senha" type="password" autocomplete="current-password" required>
+      <button type="submit" class="primario">Entrar</button>
+      <a href="#" id="ir-esqueci">Esqueci minha senha</a>
+    </form>
+    <form id="form-esqueci" hidden>
+      <h1>Redefinir senha</h1>
+      <p class="mut">Informe seu e-mail. Enviamos um link para você criar uma senha nova.</p>
+      <label for="esqueci-email">E-mail</label>
+      <input id="esqueci-email" type="email" autocomplete="username" required>
+      <button type="submit" class="primario">Enviar link</button>
+      <a href="#" id="voltar-entrar">Voltar para o login</a>
+    </form>
+    <form id="form-nova" hidden>
+      <h1>Nova senha</h1>
+      <label for="nova-senha">Nova senha</label>
+      <input id="nova-senha" type="password" autocomplete="new-password" minlength="8" required>
+      <label for="nova-senha2">Repita a nova senha</label>
+      <input id="nova-senha2" type="password" autocomplete="new-password" minlength="8" required>
+      <p class="mut">Pelo menos 8 caracteres, com letras e números.</p>
+      <button type="submit" class="primario">Salvar senha</button>
+      <a href="#" id="cancelar-nova" hidden>Cancelar</a>
+    </form>
+    <p id="login-msg" class="login-msg" role="alert"></p>
+  </div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.js" integrity="sha384-Rj26LVGvoeRVR6+mwQmFfcR3QOBEwT+ZmuCWpuiqeTzJpCs0ER4ITAWGb4Hiy3Ok" crossorigin="anonymous"></script>
+<script src="/login.js"></script>
+<script src="/admin.js"></script>
 <script src="/app.js"></script>
 </body>
 </html>

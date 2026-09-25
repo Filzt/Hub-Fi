@@ -1,5 +1,6 @@
 // SkyHub — painel (módulos Pedidos, Produtos, Precificação e Integração).
-// JS puro, sem build. Dados de /api/* com o token guardado só no sessionStorage.
+// JS puro, sem build. Login pelo Supabase (login.js); cada chamada a /api/* leva o
+// access token da sessão e o Worker confere a função da pessoa (auth.ts).
 "use strict";
 
 const $ = (s, r = document) => r.querySelector(s);
@@ -19,17 +20,48 @@ const haQuanto = (ms) => {
   return "há " + Math.round(s / 86400) + " d";
 };
 
-let token = "";
-try { token = sessionStorage.getItem("skyhub_tk") || ""; } catch { /* sessionStorage indisponível */ }
+let eu = null; // quem está logado: { nome, email, funcao, admin, modulos } de /api/eu
 const estado = { fluxoDias: 7, busca: "", filtroProd: "todos" };
 
-async function api(caminho, opt = {}) {
-  const r = await fetch(caminho, { ...opt, headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" } });
-  if (r.status === 401) throw new Error("Token inválido ou ausente.");
+async function api(caminho, opt = {}, tentativa = 0) {
+  const r = await fetch(caminho, { ...opt, headers: { Authorization: "Bearer " + (await skyAuth.token()), "Content-Type": "application/json" } });
+  // Token vencido: renova uma vez e repete; se ainda assim não der, volta para o login.
+  if (r.status === 401 && tentativa === 0 && (await skyAuth.renovar())) return api(caminho, opt, 1);
   const d = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(d.erro || "Falha HTTP " + r.status);
+  if (r.status === 401) { eu = null; skyAuth.sair(d.erro || "Sua sessão expirou. Entre de novo."); }
+  if (!r.ok) { const e = new Error(d.erro || "Falha HTTP " + r.status); e.status = r.status; throw e; }
   return d;
 }
+
+/** Download autenticado (PDF de etiqueta). */
+async function baixar(caminho) {
+  return fetch(caminho, { headers: { Authorization: "Bearer " + (await skyAuth.token()) } });
+}
+
+const permitido = (mod) => !!eu && (eu.admin || (mod !== "admin" && eu.modulos.includes(mod)));
+
+/** Chamado pelo login.js quando a pessoa entra (ou já tinha sessão). */
+async function entrarNoPainel() {
+  try { eu = await api("/api/eu"); }
+  catch (e) { eu = null; return skyAuth.sair(e.status === 403 ? e.message : "Não consegui carregar seu acesso: " + e.message); }
+  $$("nav a[data-mod]").forEach((a) => { a.hidden = !permitido(a.dataset.mod); });
+  $("#usuario").hidden = false;
+  $("#usuario-nome").textContent = eu.nome || eu.email;
+  $("#usuario-funcao").textContent = eu.funcao || "";
+  if (permitido("integracao")) carregarModos(); else $("#modos").innerHTML = "";
+  atualizarContagemExpedicao();
+  navegar();
+}
+
+/** Aviso curto de sucesso (some sozinho). */
+function avisar(texto) {
+  const a = $("#aviso");
+  a.textContent = texto;
+  a.hidden = false;
+  clearTimeout(avisar.t);
+  avisar.t = setTimeout(() => { a.hidden = true; }, 3500);
+}
+window.avisar = avisar;
 const post = (caminho, corpo) => api(caminho, { method: "POST", body: corpo ? JSON.stringify(corpo) : undefined });
 
 // Botão de atualizar só com o ícone: as telas de Pedidos e Expedição já se atualizam
@@ -50,27 +82,37 @@ const MODULOS = {
   produtos: { titulo: "Produtos", render: renderProdutos },
   precificacao: { titulo: "Precificação", render: renderPrecificacao },
   integracao: { titulo: "Integração", render: renderIntegracao },
+  admin: { titulo: "Administração", render: renderAdmin },
 };
 
 function rota() {
   const [mod, sub] = (location.hash.replace(/^#/, "") || "pedidos").split("/");
   const m = MODULOS[mod] ? mod : "pedidos";
-  return { mod: m, sub: sub || (m === "integracao" ? "visao" : m === "expedicao" ? "imprimir" : "") };
+  return { mod: m, sub: sub || (m === "integracao" ? "visao" : m === "expedicao" ? "imprimir" : m === "admin" ? "usuarios" : "") };
 }
 
 async function navegar() {
-  const { mod, sub } = rota();
+  if (!eu) return; // o login.js chama entrarNoPainel quando houver sessão
+  let { mod, sub } = rota();
+  if (!permitido(mod)) {
+    // Função sem acesso a este módulo: vai para o primeiro que ela pode ver.
+    const primeiro = Object.keys(MODULOS).find(permitido);
+    if (!primeiro) { $("#conteudo").innerHTML = '<p class="vazio">Sua função ainda não tem nenhum módulo liberado. Fale com o administrador.</p>'; return; }
+    if (primeiro !== mod) { location.hash = "#" + primeiro; return; }
+  }
   $$("nav a[data-mod]").forEach((a) => a.classList.toggle("ativo", a.dataset.mod === mod));
   $("#sub-integracao").classList.toggle("aberto", mod === "integracao");
   $$("#sub-integracao a").forEach((a) => a.classList.toggle("ativo", mod === "integracao" && a.dataset.sub === sub));
   $("#sub-expedicao").classList.toggle("aberto", mod === "expedicao");
+  $("#sub-admin").classList.toggle("aberto", mod === "admin");
+  $$("#sub-admin a").forEach((a) => a.classList.toggle("ativo", mod === "admin" && a.dataset.sub === sub));
   $$("#sub-expedicao a").forEach((a) => a.classList.toggle("ativo", mod === "expedicao" && a.dataset.sub === sub));
   const subtitulo = mod === "integracao" ? ({ visao: "Visão geral", nfs: "NF-e → ML", logs: "Logs", eventos: "Eventos" }[sub] || "")
     : mod === "expedicao" ? ({ agendados: "Agendados", imprimir: "Para imprimir", impressos: "Impressos", despachados: "Despachados" }[sub] || "")
+    : mod === "admin" ? ({ usuarios: "Usuários", funcoes: "Funções" }[sub] || "")
     : mod === "precificacao" && sub === "ml" ? "Mercado Livre" : "";
   $("#titulo").textContent = MODULOS[mod].titulo + (subtitulo ? " · " + subtitulo : "");
   limparErro();
-  if (!token) { $("#conteudo").innerHTML = '<p class="vazio">Informe o token de acesso para carregar.</p>'; return; }
   $("#conteudo").innerHTML = '<p class="vazio">Carregando…</p>';
   try { await MODULOS[mod].render(sub); } catch (e) { erro(e); $("#conteudo").innerHTML = ""; }
 }
@@ -173,7 +215,7 @@ async function imprimirEtiquetas(ids) {
   const lista = ids.split(",").filter(Boolean);
   if (lista.length > 20) throw new Error("Máximo de 20 etiquetas por vez.");
   if (!confirm("Baixar " + lista.length + " etiqueta(s) 10x15? O ML marca os envios como impressos.")) return;
-  const r = await fetch("/api/etiquetas/baixar?formato=pdf&ids=" + lista.join(","), { headers: { Authorization: "Bearer " + token } });
+  const r = await baixar("/api/etiquetas/baixar?formato=pdf&ids=" + lista.join(","));
   if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.erro || "Falha HTTP " + r.status); }
   const url = URL.createObjectURL(await r.blob());
   window.open(url, "_blank");
@@ -203,7 +245,7 @@ const FASE_EXP = {
 
 /** Números dos submenus da Expedição. Silencioso: falha aqui não atrapalha a tela. */
 async function atualizarContagemExpedicao() {
-  if (!token) return;
+  if (!permitido("expedicao")) return;
   try {
     const c = await api("/api/expedicao/contagem");
     for (const [k, v] of Object.entries(c)) {
@@ -458,7 +500,7 @@ async function imprimirSelecionadas(bt) {
 
 /** Baixa o PDF 10x15 dos envios e manda para a impressora (iframe oculto). */
 async function imprimirPdf(ids) {
-  const r = await fetch("/api/etiquetas/baixar?formato=pdf&ids=" + ids.map(encodeURIComponent).join(","), { headers: { Authorization: "Bearer " + token } });
+  const r = await baixar("/api/etiquetas/baixar?formato=pdf&ids=" + ids.map(encodeURIComponent).join(","));
   if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.erro || "Falha HTTP " + r.status); }
   const url = URL.createObjectURL(await r.blob());
   // Imprime direto num iframe oculto; se o navegador bloquear, abre o PDF numa aba.
@@ -653,12 +695,8 @@ document.addEventListener("click", async (ev) => {
   const b = ev.target.closest("button, [data-ped]");
   if (!b) return;
   try {
-    if (b.id === "entrar") {
-      token = $("#tk").value.trim();
-      try { sessionStorage.setItem("skyhub_tk", token); } catch { /* ignora */ }
-      await carregarModos();
-      return navegar();
-    }
+    if (b.id === "sair") { eu = null; $("#usuario").hidden = true; return skyAuth.sair(); }
+    if (b.id === "trocar-senha") return skyAuth.trocarSenha();
     if (b.id === "fechar-gaveta") { $("#gaveta").hidden = true; return; }
     if (b.dataset.ped) return abrirPedido(b.dataset.ped);
     if (b.dataset.imprimir) return imprimirEtiquetas(b.dataset.imprimir);
@@ -705,7 +743,7 @@ window.addEventListener("afterprint", () => setTimeout(focarBipe, 50));
 // gaveta ou alerta abertos, busca digitada, impressão em lote em andamento.
 let autoOcupado = false;
 setInterval(async () => {
-  if (!token || document.hidden || autoOcupado) return;
+  if (!eu || document.hidden || autoOcupado) return;
   if (!$("#gaveta").hidden || !$("#cancelado").hidden) return;
   const { mod } = rota();
   autoOcupado = true;
@@ -724,5 +762,4 @@ setInterval(async () => {
   } catch { /* falha passageira: tenta no próximo minuto */ } finally { autoOcupado = false; }
 }, AUTO_MS);
 
-if (token) { $("#tk").value = ""; carregarModos(); atualizarContagemExpedicao(); }
-navegar();
+skyAuth.iniciar(entrarNoPainel);

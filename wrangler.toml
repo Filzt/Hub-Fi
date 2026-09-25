@@ -46,8 +46,14 @@ PRECO_MODO = "automatico" # sombra | automatico — régua: tabela 0 × 1,1236 +
 MELI_API = "https://api.mercadolibre.com"
 MELI_USER_ID = "3474041384"
 SANKHYA_API = "https://api.sankhya.com.br"
+# Login do painel (Supabase Auth). URL e chave publicável são públicas por natureza.
+SUPABASE_URL = "https://eqfdpixjonvkmhipzrcn.supabase.co"
+SUPABASE_PUBLISHABLE_KEY = "sb_publishable_FWiqNk2uNX3SM00SVHCxag_QrFkVaQ_"
+ADMIN_INICIAL = "filipe@gruposkytech.com.br"
+PAINEL_URL = "https://skyhub.olivera-kaique2004.workers.dev"
 
 # Segredos (nunca aqui — `npx wrangler secret put <NOME>` ou painel da Cloudflare):
 #   MELI_CLIENT_ID, MELI_CLIENT_SECRET
 #   SANKHYA_CLIENT_ID, SANKHYA_CLIENT_SECRET, SANKHYA_XTOKEN
+#   SUPABASE_SECRET_KEY (chave sb_secret do projeto do login)
 #   ADMIN_TOKEN  (protege /api e o painel)
