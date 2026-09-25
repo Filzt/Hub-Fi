@@ -841,9 +841,11 @@ document.addEventListener("keydown", (ev) => { if (ev.key === "Escape") menuUsua
 // Sankhya (ERP) em cima, SkyHub no meio e os canais embaixo. A cor da linha é a saúde da ligação.
 const TXT_SAUDE = { ok: "Operando", warn: "Atenção", err: "Sem resposta", off: "Em breve" };
 
-function noArvore({ logo, marca, titulo, sub, saude, det, extra, classe }) {
+// logoEscuro: versão branca, usada quando o sistema está no tema escuro (logos/*-branco.png).
+function noArvore({ logo, logoEscuro, marca, titulo, sub, saude, det, extra, classe }) {
   return '<div class="no-arvore ' + (classe || "") + " saude-" + saude + '">' +
-    (logo ? '<img src="' + logo + '" alt="' + esc(titulo) + '"' + (marca ? ' class="' + marca + '"' : "") + ">" : '<span class="skyhub-marca">' + (titulo === "SkyHub" ? '<img src="/logos/skyhub.svg" alt="" aria-hidden="true">' : "") + esc(titulo) + "</span>") +
+    (logo ? (logoEscuro ? '<picture><source media="(prefers-color-scheme: dark)" srcset="' + logoEscuro + '">' : "") +
+      '<img src="' + logo + '" alt="' + esc(titulo) + '"' + (marca ? ' class="' + marca + '"' : "") + ">" + (logoEscuro ? "</picture>" : "") : '<span class="skyhub-marca">' + (titulo === "SkyHub" ? '<img src="/logos/skyhub.svg" alt="" aria-hidden="true">' : "") + esc(titulo) + "</span>") +
     (sub ? '<span class="no-sub">' + esc(sub) + "</span>" : "") +
     '<span class="estado"><span class="ponto ' + (saude === "off" ? "" : saude) + '"></span>' + TXT_SAUDE[saude] + "</span>" +
     (det ? '<span class="det">' + det + "</span>" : "") + (extra || "") + "</div>";
@@ -860,7 +862,7 @@ async function renderArvore() {
     {
       saude: saudeMl,
       html: noArvore({
-        logo: "/logos/mercadolivre.webp", marca: "logo-claro", titulo: "Mercado Livre", saude: saudeMl,
+        logo: "/logos/mercadolivre.webp", logoEscuro: "/logos/mercadolivre-branco.png", titulo: "Mercado Livre", saude: saudeMl,
         det: "Token " + (s.ml.tokenOk ? "válido até " + esc(hora(s.ml.expiraEm)) : "INVÁLIDO") + " · Último aviso " + esc(haQuanto(s.ml.ultimoEvento)) +
           (s.ml.eventosComErro ? '<br><a href="#integracao/eventos">' + esc(s.ml.eventosComErro) + " evento(s) com erro</a>" : ""),
         extra: '<div class="metricas">' + metrica(h.eventosRecebidos, "Vendas recebidas hoje") + metrica(h.xmlEnviados, "XML de NF enviados") +
@@ -871,12 +873,12 @@ async function renderArvore() {
   ];
   $("#conteudo").innerHTML =
     '<div class="painel"><div class="arvore">' +
-    noArvore({ logo: "/logos/sankhya.svg", marca: "logo-escuro", titulo: "Sankhya", saude: saudeSk,
+    noArvore({ logo: "/logos/sankhya.svg", logoEscuro: "/logos/sankhya-branco.png", marca: "logo-escuro", titulo: "Sankhya", saude: saudeSk,
       det: "Última leitura " + esc(haQuanto(s.sankhya.ultimaLeitura)) + (s.sankhya.ultimoErro ? " · Último erro " + esc(haQuanto(s.sankhya.ultimoErro.em)) : "") }) +
     '<div class="tronco saude-' + saudeSk + '"><div class="rotulos">' +
       '<span class="rotulo">' + metrica(h.pedidosGravados, "Pedidos gravados hoje") + "</span>" +
       '<span class="rotulo">' + metrica(haQuanto(s.sankhya.ultimaLeitura), "Leitura de estoque e preço") + "</span></div></div>" +
-    noArvore({ logo: "/logos/skyhub-nome.png", marca: "logo-nome", titulo: "SkyHub", saude: saudeHub, classe: "hub",
+    noArvore({ logo: "/logos/skyhub-nome.png", logoEscuro: "/logos/skyhub-nome-branco.png", marca: "logo-nome", titulo: "SkyHub", saude: saudeHub, classe: "hub",
       det: "Última rodada " + esc(haQuanto(s.skyhub.ultimaRodada)) + (s.skyhub.rodadaAbortada ? ' · <span class="warn">Abortada: ' + esc(s.skyhub.rodadaAbortada) + "</span>" : "") +
         "<br>" + esc(s.skyhub.eventosPendentes) + " evento(s) na fila · " + (h.errosLog ? '<a href="#integracao/logs">' + esc(h.errosLog) + " erro(s) hoje</a>" : "0 erros hoje") }) +
     '<div class="galhos' + (canais.length === 1 ? " um" : "") + '">' + canais.map((c) => '<div class="galho saude-' + c.saude + '">' + c.html + "</div>").join("") + "</div>" +

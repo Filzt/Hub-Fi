@@ -432,7 +432,7 @@ td.prod-nome { max-width: 340px; min-width: 200px; }
   .metricas { grid-template-columns: 1fr; }
 }
 .no-arvore.breve .skyhub-marca { color: var(--mut); font-size: 20px; }
-@media (prefers-color-scheme: dark) { .no-arvore img.logo-claro { background: #fff; padding: 6px 12px; border-radius: 8px; box-sizing: content-box; } }
+
 
 /* ------------------------------------------------------------------ kanban: cabeçalhos da mesma altura */
 .coluna-topo .desc { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -477,3 +477,11 @@ img.marca-simbolo { background: none; padding: 0; border-radius: 9px; box-shadow
 .login-marca .marca-nome { height: 52px; }
 .no-arvore img.logo-nome { max-width: 170px; max-height: 42px; }
 @media (max-width: 900px) { .marca-nome { height: 28px; } }
+
+/* logos brancos no tema escuro (picture/source); no claro, o Sankhya (texto branco) vai numa placa escura */
+.no-arvore img.logo-escuro { background: #0b1220; padding: 8px 14px; border-radius: 8px; box-sizing: content-box; }
+@media (prefers-color-scheme: dark) {
+  .no-arvore img.logo-escuro { background: none; padding: 0; }
+  .no-arvore picture img { max-height: 52px; max-width: 150px; }
+  .no-arvore picture img.logo-nome { max-height: 40px; max-width: 170px; }
+}
