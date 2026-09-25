@@ -165,9 +165,9 @@ test("parceiro bloqueia sem CEP na TSICEP ou documento inválido", () => {
   assert.match(montarParceiro(billing({ identification: { type: "CPF", number: "123" } }), cep).bloqueio!, /documento/);
 });
 
-test("o JavaScript do painel (app.js, login.js, admin.js, publicacao.js) é válido", async () => {
+test("o JavaScript do painel (app.js, login.js, admin.js, publicacao.js, tabela.js) é válido", async () => {
   const { readFileSync } = await import("node:fs");
-  for (const arq of ["app.js", "login.js", "admin.js", "publicacao.js"]) {
+  for (const arq of ["app.js", "login.js", "admin.js", "publicacao.js", "tabela.js"]) {
     const js = readFileSync(new URL("../public/" + arq, import.meta.url), "utf8");
     assert.doesNotThrow(() => new Function(js), arq);
   }

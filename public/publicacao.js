@@ -223,7 +223,9 @@ function desenharFlex() {
     c.checked ? flexTela.sel.add(c.dataset.selFlex) : flexTela.sel.delete(c.dataset.selFlex);
     desenharFlex();
   });
-  $("#flex-todos").onchange = (ev) => { visiveis().forEach((c) => (ev.target.checked ? flexTela.sel.add(c.dataset.selFlex) : flexTela.sel.delete(c.dataset.selFlex))); desenharFlex(); };
+  // "Todos" = todas as linhas que passam nos filtros da tabela, em todas as páginas.
+  const todasFiltradas = () => skyTabela.filtradas($("#tb-flex").closest("table")).map((tr) => tr.querySelector("input[data-sel-flex]")).filter(Boolean);
+  $("#flex-todos").onchange = (ev) => { todasFiltradas().forEach((c) => (ev.target.checked ? flexTela.sel.add(c.dataset.selFlex) : flexTela.sel.delete(c.dataset.selFlex))); desenharFlex(); };
   $("#busca-flex").oninput = (e) => {
     flexTela.busca = e.target.value;
     clearTimeout(desenharFlex.t);

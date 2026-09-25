@@ -151,7 +151,7 @@ button.icone { padding: 6px 9px; font-size: 16px; line-height: 1; min-width: 34p
 
 /* filtros em pílula */
 .chips { display: flex; gap: 6px; flex-wrap: wrap; }
-.chip-filtro { padding: 5px 12px; min-height: 30px; border-radius: 999px; font-size: 13px; }
+.chip-filtro { padding: 5px 12px; min-height: 32px; border-radius: var(--r-sm); font-size: 13px; }
 .chip-filtro .n { margin-left: 2px; color: var(--mut); font-variant-numeric: tabular-nums; }
 .chip-filtro.ativo { background: var(--info); border-color: var(--info); color: #fff; }
 .chip-filtro.ativo .n { color: #ffffffcc; }
@@ -433,3 +433,34 @@ td.prod-nome { max-width: 340px; min-width: 200px; }
 }
 .no-arvore.breve .skyhub-marca { color: var(--mut); font-size: 20px; }
 @media (prefers-color-scheme: dark) { .no-arvore img.logo-claro { background: #fff; padding: 6px 12px; border-radius: 8px; box-sizing: content-box; } }
+
+/* ------------------------------------------------------------------ kanban: cabeçalhos da mesma altura */
+.coluna-topo .desc { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.coluna-corpo > button.primario { width: 100%; }
+
+/* ------------------------------------------------------------------ bipe: campo na altura dos botões */
+.bipe { padding: 12px 16px; }
+.bipe input { font-size: 17px; min-height: 40px; height: 40px; padding: 6px 12px; }
+.bipe button { min-height: 40px; height: 40px; }
+.bipe button.icone { width: 40px; padding: 0; }
+
+/* ------------------------------------------------------------------ tabela padrão (tabela.js) */
+.tabela-barra { display: flex; gap: 8px; justify-content: flex-end; padding: 10px 12px; border-bottom: 1px solid var(--bd); }
+.tabela-barra button { min-height: 32px; padding: 5px 10px; font-size: 13px; }
+.tabela-barra button[aria-expanded="true"] { border-color: var(--info); color: var(--info); background: var(--info-bg); }
+.qtd-filtro { background: var(--info); color: #fff; border-radius: 999px; font-size: 11px; padding: 0 6px; line-height: 16px; }
+th.ordenavel { cursor: pointer; user-select: none; }
+th.ordenavel:hover { color: var(--tx); }
+th.ordenavel::after { content: "↕"; margin-left: 5px; opacity: .35; font-size: 10px; }
+th.ordenavel[data-dir="asc"]::after { content: "▲"; opacity: 1; color: var(--info); }
+th.ordenavel[data-dir="desc"]::after { content: "▼"; opacity: 1; color: var(--info); }
+thead tr.tabela-filtros th { position: static; padding: 6px 8px; background: var(--card); text-transform: none; letter-spacing: 0; }
+.tabela-filtros input { width: 100%; min-width: 70px; min-height: 30px; padding: 4px 8px; font-size: 12px; font-weight: 400; }
+.tabela-rodape { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: 10px 12px; border-top: 1px solid var(--bd); font-size: 13px; color: var(--mut); }
+.tabela-rodape .espaco { flex: 1; }
+.tabela-tamanho { display: inline-flex; align-items: center; gap: 6px; }
+.tabela-tamanho select { min-height: 30px; padding: 3px 8px; }
+.tabela-paginas { display: inline-flex; gap: 4px; align-items: center; }
+.tabela-paginas button { min-height: 30px; min-width: 32px; padding: 3px 8px; font-size: 13px; }
+.tabela-paginas button.atual { background: var(--info); border-color: var(--info); color: #fff; }
+.tabela-paginas .reticencias { padding: 0 2px; }

@@ -179,13 +179,13 @@ const seloCanal = (canal) => SELOS[canal || "ml"] || "";
 
 /* ------------------------------------------------------------------ Pedidos */
 const FASE_INFO = {
-  novo: { nome: "Recebido", desc: "Venda no ML, ainda fora do Sankhya" },
-  erp: { nome: "No Sankhya", desc: "Pedido 1090, aguardando faturamento" },
-  faturado: { nome: "Faturado", desc: "NF autorizada, XML ainda não aceito pelo ML" },
+  novo: { nome: "Recebido", desc: "Venda no ML, fora do Sankhya" },
+  erp: { nome: "No Sankhya", desc: "Pedido 1090, aguardando NF" },
+  faturado: { nome: "Faturado", desc: "NF autorizada, sem XML no ML" },
   nf_ml: { nome: "NF no ML", desc: "XML aceito, etiqueta liberada" },
   etiqueta: { nome: "Etiqueta impressa", desc: "Aguardando coleta" },
   enviado: { nome: "Enviado", desc: "Saiu para entrega" },
-  atencao: { nome: "Atenção", desc: "Bloqueado, divergente ou com erro" },
+  atencao: { nome: "Atenção", desc: "Bloqueado ou com erro" },
   cancelado: { nome: "Cancelados", desc: "Cancelados no ML" },
 };
 
@@ -205,7 +205,7 @@ async function renderPedidos() {
     const acaoColuna = (f === "nf_ml" && imprimiveis.length)
       ? '<button type="button" class="primario" data-imprimir="' + esc(imprimiveis.map((p) => p.shipment_id).join(",")) + '">Imprimir etiquetas (' + imprimiveis.length + ")</button>" : "";
     return '<div class="coluna ' + f + '"><div class="coluna-topo"><div class="t">' + esc(FASE_INFO[f].nome) + '<span class="qtd">' + lista.length + "</span></div>" +
-      '<div class="desc">' + esc(FASE_INFO[f].desc) + "</div>" + acaoColuna + '</div><div class="coluna-corpo">' +
+      '<div class="desc" title="' + esc(FASE_INFO[f].desc) + '">' + esc(FASE_INFO[f].desc) + '</div></div><div class="coluna-corpo">' + acaoColuna +
       (lista.length ? lista.map(cartaoPedido).join("") : '<span class="mut">Nenhum</span>') + "</div></div>";
   }).join("");
   $("#conteudo").innerHTML = barra + '<div class="esteira">' + colunas + "</div>";
@@ -378,8 +378,8 @@ async function renderExpedicao(sub) {
   const prontas = d.etiquetas.filter((e) => e.substatus === "ready_to_print").length;
   $("#conteudo").innerHTML =
     '<div class="bipe"><label for="bipe">Bipar etiqueta</label><input id="bipe" inputmode="numeric" autocomplete="off" placeholder="Leia o código do pedido">' +
-    '<button type="button" id="limpar-bipe">Limpar</button>' + btnAtualizar("atualizar-exp", "Atualizar agora: relê os envios no Mercado Livre (a tela já se atualiza a cada minuto)") +
-    '<span class="dica">Aceita nº do pedido do ML, nº do envio, chave ou número da NF. O 1º bipe localiza; bipar de novo (ou Enter) imprime.</span></div>' +
+    '<button type="button" id="limpar-bipe" class="icone" title="Limpar" aria-label="Limpar"><svg class="ico"><use href="#i-lixo"/></svg></button>' + btnAtualizar("atualizar-exp", "Atualizar agora: relê os envios no Mercado Livre (a tela já se atualiza a cada minuto)") +
+    "</div>" +
     '<div id="resultado-bipe"></div>' +
     '<div class="cards"><div class="card"><b id="n-prontas">' + prontas + '</b><span>Para imprimir</span></div><div class="card"><b id="n-impressas">' + (d.etiquetas.length - prontas) + '</b><span>Impressas, aguardando despacho</span></div></div>' +
     (expedicao.fase === "despachados" ? '<p class="dica">Despachados hoje: o ML registrou a entrada do pacote na agência ou coleta.</p>' : "") +
@@ -400,7 +400,8 @@ async function renderExpedicao(sub) {
     atualizarSelecao();
   });
   if ($("#sel-todas")) $("#sel-todas").addEventListener("change", (ev) => {
-    const visiveis = $$("#tb-exp input[data-sel]:not(:disabled)").map((c) => c.dataset.sel);
+    // "Todas" = as que passam nos filtros da tabela, em todas as páginas (até 20).
+    const visiveis = skyTabela.filtradas($("#tb-exp").closest("table")).map((tr) => tr.querySelector("input[data-sel]:not(:disabled)")).filter(Boolean).map((c) => c.dataset.sel);
     if (ev.target.checked) {
       for (const id of visiveis) {
         if (expedicao.sel.size >= MAX_SEL) { erro("Selecionei as primeiras " + MAX_SEL + " (máximo por impressão)."); break; }
@@ -618,7 +619,7 @@ function desenharProdutos() {
   const f = (FILTROS_PROD.find(([k]) => k === prod.filtro) || FILTROS_PROD[0])[2];
   const filtrados = lista.filter(f).filter((p) => !b || p.sku.includes(b) || String(p.produto || "").toUpperCase().includes(b) ||
     p.canais.ml.anuncios.some((a) => a.item_id.includes(b)));
-  const linhas = filtrados.slice(0, prod.limite).map((p) => {
+  const linhas = filtrados.map((p) => {
     const avisos = (temDiv(p, "div_qtd") ? '<span class="tag warn">Estoque a ajustar</span>' : "") + (temDiv(p, "div_preco") ? '<span class="tag warn">Preço a ajustar</span>' : "");
     const ult = p.canais.ml.anuncios.filter((a) => a.acao_em).sort((x, y) => y.acao_em - x.acao_em)[0];
     return '<tr class="clicavel" data-sku="' + esc(p.sku) + '"><td><b>' + esc(p.sku) + '</b></td><td class="prod-nome">' + esc(p.produto || "—") + "</td>" +
@@ -636,8 +637,7 @@ function desenharProdutos() {
     '<span class="espaco"></span><span class="atualizado">Sankhya lido ' + esc(haQuanto(d.erpEm)) + "</span>" +
     '<button id="rodar-estoque" type="button">Sincronizar agora</button></div>' +
     '<div class="painel"><table><thead><tr><th>SKU</th><th>Produto</th><th class="n">Saldo</th><th class="n">Preço loja</th><th>Canais</th><th>Última ação</th></tr></thead><tbody id="tb-prod">' +
-    (linhas || '<tr><td colspan="6" class="vazio">Nenhum SKU neste filtro.</td></tr>') + "</tbody></table>" +
-    (filtrados.length > prod.limite ? '<div class="mais"><button type="button" id="mais-prod">Mostrar mais (' + (filtrados.length - prod.limite).toLocaleString("pt-BR") + " restantes)</button></div>" : "") + "</div>";
+    (linhas || '<tr><td colspan="6" class="vazio">Nenhum SKU neste filtro.</td></tr>') + "</tbody></table></div>";
   $("#busca-prod").oninput = (e) => {
     prod.busca = e.target.value; prod.limite = 300;
     clearTimeout(desenharProdutos.t);
@@ -648,7 +648,6 @@ function desenharProdutos() {
     try { await post("/api/estoque/rodar"); avisar("Estoque e preço sincronizados."); await renderProdutos(); }
     catch (x) { erro(x); e.target.disabled = false; e.target.textContent = "Sincronizar agora"; }
   };
-  if ($("#mais-prod")) $("#mais-prod").onclick = () => { prod.limite += 300; desenharProdutos(); };
 }
 
 function situacaoAnuncio(a) {
