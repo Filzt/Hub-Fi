@@ -1,7 +1,7 @@
 // skyhub — entrada do Worker: webhook do ML, API do painel e cron de reprocessamento.
 
 import { rotaAdmin } from "./admin.ts";
-import { moduloDaRota, MODULOS as MODULOS_TODOS, pode, type Modulo, type Quem, verificarJwt } from "./auth.ts";
+import { emailValido, moduloDaRota, MODULOS as MODULOS_TODOS, pode, type Modulo, type Quem, senhaRecente, supabaseAdmin, verificarJwt } from "./auth.ts";
 import { CANAIS, montarCatalogo } from "./catalogo.ts";
 import { alterarFlex, configFlex } from "./flex.ts";
 import { checarBipe } from "./expedicao.ts";
@@ -138,6 +138,31 @@ async function rotaApi(req: Request, env: Env, url: URL): Promise<Response> {
   }
   if (req.method === "GET" && p === "/api/eu") {
     return json({ id: quem.id, email: quem.email, nome: quem.nome, funcao: quem.funcao, admin: quem.admin, modulos: quem.admin ? MODULOS_TODOS : quem.modulos });
+  }
+  // Meu perfil: a própria pessoa muda nome e e-mail (função e acesso continuam com o administrador).
+  if (req.method === "PUT" && p === "/api/eu") {
+    if (quem.tipo !== "usuario") return json({ erro: "só para usuários do painel" }, 403);
+    const b = (await req.json().catch(() => ({}))) as { nome?: unknown; email?: unknown };
+    const atual = await store.usuario(quem.id);
+    if (!atual) return json({ erro: "usuário não encontrado" }, 404);
+    const nome = b.nome === undefined ? atual.nome : String(b.nome).replace(/\s+/g, " ").trim().slice(0, 80);
+    if (nome.length < 2) return json({ erro: "Informe o nome." }, 400);
+    const email = b.email === undefined ? atual.email : String(b.email).trim().toLowerCase();
+    if (email !== atual.email) {
+      if (!emailValido(email)) return json({ erro: "E-mail inválido." }, 400);
+      if ((await store.listarUsuarios()).some((u) => u.id !== quem.id && u.email === email)) return json({ erro: "Esse e-mail já é de outro usuário." }, 409);
+      // Senha digitada nos últimos 5 min (o painel pede e o Supabase confere; a senha não passa por aqui).
+      const claims = await verificarJwt(env, (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "").trim());
+      if (!claims || claims.sub !== quem.id || !senhaRecente(claims, Math.floor(Date.now() / 1000))) {
+        return json({ erro: "Confirme sua senha atual para trocar o e-mail." }, 403);
+      }
+      try { await supabaseAdmin(env, "PUT", `/admin/users/${quem.id}`, { email, email_confirm: true }); }
+      catch (e) { return json({ erro: "O login não aceitou o e-mail novo: " + (e as Error).message.slice(0, 160) }, 400); }
+    }
+    await store.salvarUsuario({ ...atual, nome, email });
+    const mudou = [nome !== atual.nome ? "nome" : "", email !== atual.email ? `e-mail (${atual.email} → ${email})` : ""].filter(Boolean);
+    if (mudou.length) await store.log("info", null, `perfil alterado por ${atual.email}: ${mudou.join(", ")}`);
+    return json({ nome, email, emailMudou: email !== atual.email });
   }
   if (p.startsWith("/api/admin/")) {
     const res = await rotaAdmin(req, env, url, quem, store);

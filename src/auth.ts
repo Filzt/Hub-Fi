@@ -44,7 +44,21 @@ async function chavesPublicas(env: Env, forcar = false): Promise<Map<string, Cry
 
 const b64url = (s: string) => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((s.length + 3) % 4)), (c) => c.charCodeAt(0));
 
-export interface Claims { sub: string; email?: string; exp: number; iss?: string; aud?: string | string[]; role?: string }
+export interface Claims {
+  sub: string; email?: string; exp: number; iss?: string; aud?: string | string[]; role?: string;
+  amr?: Array<{ method?: string; timestamp?: number }>; // Supabase: como e quando a sessão foi autenticada
+}
+
+/**
+ * A pessoa digitou a senha há pouco? (amr "password" dentro da janela). Trocar o e-mail muda
+ * o login: exige senha recente, para que uma sessão esquecida aberta não baste.
+ */
+export function senhaRecente(c: Pick<Claims, "amr">, agoraS: number, janelaS = 5 * 60): boolean {
+  return (c.amr ?? []).some((a) => a.method === "password" && typeof a.timestamp === "number" && agoraS - a.timestamp <= janelaS && a.timestamp <= agoraS + 60);
+}
+
+/** E-mail aceitável para login (simples, sem espaço; o Supabase valida o resto). */
+export const emailValido = (e: string) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(e) && e.length <= 254;
 
 /** Confere assinatura, emissor, público e validade. Null se qualquer coisa falhar. */
 export async function verificarJwt(env: Env, token: string): Promise<Claims | null> {

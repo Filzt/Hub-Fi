@@ -19,6 +19,8 @@
   <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></symbol>
   <symbol id="i-sair" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></symbol>
   <symbol id="i-chave" viewBox="0 0 24 24"><circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6M15.5 7.5l3 3L22 7l-3-3"/></symbol>
+  <symbol id="i-perfil" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="10" r="3"/><path d="M7 20.66V19a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v1.66"/></symbol>
+  <symbol id="i-seta" viewBox="0 0 24 24"><path d="m18 15-6-6-6 6"/></symbol>
   <symbol id="i-fechar" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
 </svg>
 <div class="app">
@@ -69,13 +71,17 @@
         </div>
       </div>
     </nav>
+    <!-- Cartão do usuário: abre o menu (Meu perfil, Sair) para cima. -->
     <div class="usuario" id="usuario" hidden>
-      <span class="avatar" id="usuario-avatar" aria-hidden="true"></span>
-      <span class="usuario-txt"><span class="usuario-nome" id="usuario-nome"></span><span class="usuario-funcao" id="usuario-funcao"></span></span>
-      <span class="usuario-acoes">
-        <button type="button" id="trocar-senha" class="icone-lat" title="Trocar senha" aria-label="Trocar senha"><svg class="ico"><use href="#i-chave"/></svg></button>
-        <button type="button" id="sair" class="icone-lat" title="Sair" aria-label="Sair"><svg class="ico"><use href="#i-sair"/></svg></button>
-      </span>
+      <div class="menu-usuario" id="menu-usuario" role="menu" hidden>
+        <a href="#perfil" role="menuitem" id="ir-perfil"><svg class="ico"><use href="#i-perfil"/></svg><span>Meu perfil</span></a>
+        <button type="button" role="menuitem" id="sair" class="sair"><svg class="ico"><use href="#i-sair"/></svg><span>Sair</span></button>
+      </div>
+      <button type="button" class="cartao-usuario" id="abrir-usuario" aria-haspopup="menu" aria-expanded="false" aria-controls="menu-usuario">
+        <span class="avatar" id="usuario-avatar" aria-hidden="true"></span>
+        <span class="usuario-txt"><span class="usuario-nome" id="usuario-nome"></span><span class="usuario-funcao" id="usuario-funcao"></span></span>
+        <svg class="ico seta-usuario" aria-hidden="true"><use href="#i-seta"/></svg>
+      </button>
     </div>
   </aside>
   <main>

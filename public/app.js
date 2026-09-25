@@ -44,6 +44,7 @@ const DO_ML = ["publicacao", "precificacao", "flex"];
 const grupoDe = (mod) => (DO_ML.includes(mod) ? "ml" : mod);
 const permitido = (mod) => {
   if (!eu) return false;
+  if (mod === "perfil") return true; // o próprio perfil, qualquer função
   if (mod === "ml") return eu.admin || DO_ML.some((m) => eu.modulos.includes(m));
   if (mod === "flex") mod = "publicacao"; // Envio Flex é permissão de anúncios do ML
   return eu.admin || (mod !== "admin" && eu.modulos.includes(mod));
@@ -62,7 +63,7 @@ async function entrarNoPainel() {
   $$("nav .nav-secao").forEach((s) => { s.hidden = !$$("a[data-mod]", s).some((a) => !a.hidden); });
   $("#usuario").hidden = false;
   $("#usuario-nome").textContent = eu.nome || eu.email;
-  $("#usuario-funcao").textContent = eu.funcao || "";
+  $("#usuario-funcao").textContent = [eu.funcao, "Skyline"].filter(Boolean).join(" · ");
   $("#usuario-avatar").textContent = iniciais(eu.nome || eu.email);
   atualizarContagemExpedicao();
   navegar();
@@ -101,6 +102,7 @@ const MODULOS = {
   flex: { titulo: "Envio Flex", render: renderFlex, canal: "Mercado Livre", desc: "Quais anúncios oferecem entrega no mesmo dia pelo Flex. Liga e desliga por anúncio, sempre por clique." },
   integracao: { titulo: "Integrações", render: renderIntegracao },
   admin: { titulo: "Acessos", render: renderAdmin },
+  perfil: { titulo: "Meu perfil", render: renderPerfil, desc: "Seu nome, e-mail de acesso e senha." },
 };
 const PADRAO_SUB = { integracao: "visao", expedicao: "imprimir", admin: "usuarios", publicacao: "fila", precificacao: "ml", flex: "lista" };
 const SUBTITULOS = {
@@ -739,34 +741,7 @@ async function renderIntegracao(sub) {
   if (sub === "logs") return renderLogs();
   if (sub === "eventos") return renderEventos();
   if (sub === "nfs") return renderNfs();
-  const s = await api("/api/integracao");
-  const agora = s.agora;
-  const saudeMl = !s.ml.tokenOk ? "err" : s.ml.eventosComErro ? "warn" : "ok";
-  const saudeHub = !s.skyhub.ultimaRodada || agora - s.skyhub.ultimaRodada > 6 * 60_000 ? "err" : s.skyhub.rodadaAbortada ? "warn" : "ok";
-  const saudeSk = !s.sankhya.ultimaLeitura || agora - s.sankhya.ultimaLeitura > 6 * 60_000 ? "err" : "ok";
-  const txt = { ok: "operando", warn: "atenção", err: "sem resposta" };
-  const via = (seta, rotulo, valor, detalhe) => '<div class="via"><span class="seta">' + seta + "</span>" + esc(rotulo) + " <b>" + esc(valor) + '</b><span class="mut">' + esc(detalhe) + "</span></div>";
-  const h = s.hoje;
-  $("#conteudo").innerHTML =
-    '<div class="painel"><div class="diagrama">' +
-    '<div class="no"><img src="/logos/mercadolivre.webp" alt="Mercado Livre"><div class="estado"><span class="ponto ' + saudeMl + '"></span>' + txt[saudeMl] + "</div>" +
-      '<div class="det">token ' + (s.ml.tokenOk ? "válido até " + esc(hora(s.ml.expiraEm)) : "INVÁLIDO") + "<br>último aviso " + esc(haQuanto(s.ml.ultimoEvento)) + "</div></div>" +
-    '<div class="ligacao">' + via("→", "Vendas recebidas hoje", h.eventosRecebidos, "webhook em tempo real") +
-      via("←", "XML de NF enviados hoje", h.xmlEnviados, "libera a etiqueta") +
-      via("←", "Estoque/preço ajustados hoje", h.ajustesAnuncio, (h.falhasAnuncio ? h.falhasAnuncio + " falha(s) · " : "") + "a cada 2 min") +
-      via("←", "Etiquetas baixadas hoje", h.etiquetasBaixadas, "PDF 10x15") + "</div>" +
-    '<div class="no"><span class="skyhub-marca">SkyHub</span><div class="estado"><span class="ponto ' + saudeHub + '"></span>' + txt[saudeHub] + "</div>" +
-      '<div class="det">última rodada ' + esc(haQuanto(s.skyhub.ultimaRodada)) + (s.skyhub.rodadaAbortada ? '<br><span class="warn">abortada: ' + esc(s.skyhub.rodadaAbortada) + "</span>" : "") +
-      "<br>" + esc(s.skyhub.eventosPendentes) + " evento(s) na fila · " + esc(h.errosLog) + " erro(s) hoje</div></div>" +
-    '<div class="ligacao">' + via("→", "Pedidos gravados hoje", h.pedidosGravados, "parceiro + pedido 1090") +
-      via("←", "Leitura de estoque e preço", haQuanto(s.sankhya.ultimaLeitura), "tabela 0 e TGFEST") + "</div>" +
-    '<div class="no"><img src="/logos/sankhya.svg" alt="Sankhya" class="logo-escuro"><div class="estado"><span class="ponto ' + saudeSk + '"></span>' + txt[saudeSk] + "</div>" +
-      '<div class="det">última leitura ' + esc(haQuanto(s.sankhya.ultimaLeitura)) + (s.sankhya.ultimoErro ? '<br><span class="mut">último erro ' + esc(haQuanto(s.sankhya.ultimoErro.em)) + "</span>" : "") + "</div></div>" +
-    "</div></div>" +
-    '<div class="painel"><h3>Modos de operação</h3><table><tbody>' +
-    [["Pedidos → Sankhya", s.modos.pedidos], ["XML da NF → ML", s.modos.xml], ["Cancelamento no Sankhya", s.modos.cancelamento], ["Estoque → ML", s.modos.estoque], ["Preço → ML", s.modos.preco]]
-      .map(([n, m]) => "<tr><td>" + esc(n) + '</td><td><span class="tag ' + (m === "automatico" ? "ok" : m === "manual" ? "warn" : "") + '">' + esc(m) + "</span></td></tr>").join("") +
-    "</tbody></table></div>";
+  return renderArvore();
 }
 
 async function renderLogs() {
@@ -800,6 +775,128 @@ async function renderNfs() {
       esc(n.shipment_id || "—") + "</td><td>" + esc(n.logistica || "—") + '</td><td><span class="tag ' + (cor[n.status] || "") + '">' + esc(n.status) + '</span></td><td class="mut">' + esc(n.detalhe || "") +
       "</td><td>" + (n.status === "pronto" || n.status === "erro" ? '<button type="button" data-acao="xml" data-chave="' + esc(n.chave) + '">Enviar XML</button>' : "") + "</td></tr>").join("") + "</tbody></table></div>";
   $("#varrer").onclick = async (e) => { e.target.disabled = true; e.target.textContent = "Varrendo…"; await post("/api/nfs/varrer"); navegar(); };
+}
+
+/* ------------------------------------------------------------------ Meu perfil */
+// A pessoa muda o próprio nome e e-mail (função e acesso seguem com o administrador).
+// Trocar o e-mail muda o login: pede a senha atual, conferida direto no Supabase.
+async function renderPerfil() {
+  const u = await api("/api/eu");
+  $("#conteudo").innerHTML =
+    '<div class="perfil">' +
+    '<div class="painel"><div class="perfil-topo"><span class="avatar grande" aria-hidden="true">' + esc(iniciais(u.nome || u.email)) + "</span>" +
+      "<div><b>" + esc(u.nome) + '</b><div class="mut">' + esc(u.email) + "</div><div class=\"mut\">" + esc((u.funcao || "") + " · Skyline") + "</div></div></div></div>" +
+    '<div class="painel"><h3>Nome</h3><form id="perfil-nome" class="form-perfil">' +
+      '<label>Como você aparece no SkyHub<input name="nome" maxlength="80" required autocomplete="name" value="' + esc(u.nome) + '"></label>' +
+      '<div class="acoes"><button class="primario" type="submit">Salvar nome</button></div></form></div>' +
+    '<div class="painel"><h3>E-mail de acesso</h3><form id="perfil-email" class="form-perfil" autocomplete="off">' +
+      '<p class="dica">É o e-mail que você usa para entrar. Depois de trocar, o login passa a ser com o novo.</p>' +
+      '<label>Novo e-mail<input name="email" type="email" required maxlength="254" autocomplete="off"></label>' +
+      '<label>Repita o novo e-mail<input name="email2" type="email" required maxlength="254" autocomplete="off"></label>' +
+      '<label>Senha atual<input name="senha" type="password" required autocomplete="current-password"></label>' +
+      '<div class="acoes"><button class="primario" type="submit">Trocar e-mail</button></div></form></div>' +
+    '<div class="painel"><h3>Senha</h3><div class="corpo-painel"><p class="dica">Pelo menos 8 caracteres, com letras e números.</p>' +
+      '<div class="acoes"><button type="button" id="trocar-senha">Trocar senha</button></div></div></div>' +
+    "</div>";
+
+  $("#perfil-nome").onsubmit = async (ev) => {
+    ev.preventDefault();
+    const b = ev.target.querySelector("button");
+    b.disabled = true;
+    try {
+      const r = await api("/api/eu", { method: "PUT", body: JSON.stringify({ nome: ev.target.nome.value }) });
+      eu.nome = r.nome;
+      $("#usuario-nome").textContent = r.nome;
+      $("#usuario-avatar").textContent = iniciais(r.nome);
+      avisar("Nome salvo.");
+      await renderPerfil();
+    } catch (e) { erro(e); } finally { b.disabled = false; }
+  };
+
+  $("#perfil-email").onsubmit = async (ev) => {
+    ev.preventDefault();
+    const f = ev.target;
+    const email = f.email.value.trim().toLowerCase();
+    limparErro();
+    if (email !== f.email2.value.trim().toLowerCase()) return erro("Os dois e-mails não são iguais.");
+    if (email === String(u.email).toLowerCase()) return erro("Esse já é o seu e-mail.");
+    const b = f.querySelector("button");
+    b.disabled = true; b.textContent = "Conferindo a senha…";
+    try {
+      const falha = await skyAuth.confirmarSenha(f.senha.value);
+      f.senha.value = "";
+      if (falha) return erro(falha);
+      b.textContent = "Trocando…";
+      const r = await api("/api/eu", { method: "PUT", body: JSON.stringify({ email }) });
+      await skyAuth.renovar(); // sessão nova já com o e-mail novo
+      eu.email = r.email;
+      avisar("E-mail alterado. No próximo login, entre com " + r.email + ".");
+      await renderPerfil();
+    } catch (e) { erro(e); } finally { b.disabled = false; b.textContent = "Trocar e-mail"; }
+  };
+}
+
+/** Menu do cartão do usuário (abre para cima). */
+function menuUsuario(abrir) {
+  const m = $("#menu-usuario");
+  const aberto = abrir === undefined ? m.hidden : abrir;
+  m.hidden = !aberto;
+  $("#abrir-usuario").setAttribute("aria-expanded", String(aberto));
+  $("#usuario").classList.toggle("aberto", aberto);
+}
+$("#abrir-usuario").addEventListener("click", (ev) => { ev.stopPropagation(); menuUsuario(); });
+document.addEventListener("click", (ev) => { if (!ev.target.closest("#usuario")) menuUsuario(false); });
+$("#menu-usuario").addEventListener("click", () => menuUsuario(false));
+document.addEventListener("keydown", (ev) => { if (ev.key === "Escape") menuUsuario(false); });
+
+/* ------------------------------------------------------------------ Integrações: árvore */
+// Sankhya (ERP) em cima, SkyHub no meio e os canais embaixo. A cor da linha é a saúde da ligação.
+const TXT_SAUDE = { ok: "operando", warn: "atenção", err: "sem resposta", off: "em breve" };
+
+function noArvore({ logo, marca, titulo, sub, saude, det, extra, classe }) {
+  return '<div class="no-arvore ' + (classe || "") + " saude-" + saude + '">' +
+    (logo ? '<img src="' + logo + '" alt="' + esc(titulo) + '"' + (marca ? ' class="' + marca + '"' : "") + ">" : '<span class="skyhub-marca">' + esc(titulo) + "</span>") +
+    (sub ? '<span class="no-sub">' + esc(sub) + "</span>" : "") +
+    '<span class="estado"><span class="ponto ' + (saude === "off" ? "" : saude) + '"></span>' + TXT_SAUDE[saude] + "</span>" +
+    (det ? '<span class="det">' + det + "</span>" : "") + (extra || "") + "</div>";
+}
+const metrica = (valor, rotulo, dica) => '<div class="metrica"><b>' + esc(valor) + "</b><span>" + esc(rotulo) + (dica ? ' <span class="mut">· ' + esc(dica) + "</span>" : "") + "</span></div>";
+
+async function renderArvore() {
+  const s = await api("/api/integracao");
+  const agora = s.agora, h = s.hoje;
+  const saudeMl = !s.ml.tokenOk ? "err" : s.ml.eventosComErro ? "warn" : "ok";
+  const saudeHub = !s.skyhub.ultimaRodada || agora - s.skyhub.ultimaRodada > 6 * 60_000 ? "err" : s.skyhub.rodadaAbortada ? "warn" : "ok";
+  const saudeSk = !s.sankhya.ultimaLeitura || agora - s.sankhya.ultimaLeitura > 6 * 60_000 ? "err" : "ok";
+  const canais = [
+    {
+      saude: saudeMl,
+      html: noArvore({
+        logo: "/logos/mercadolivre.webp", marca: "logo-claro", titulo: "Mercado Livre", saude: saudeMl,
+        det: "token " + (s.ml.tokenOk ? "válido até " + esc(hora(s.ml.expiraEm)) : "INVÁLIDO") + " · último aviso " + esc(haQuanto(s.ml.ultimoEvento)) +
+          (s.ml.eventosComErro ? '<br><a href="#integracao/eventos">' + esc(s.ml.eventosComErro) + " evento(s) com erro</a>" : ""),
+        extra: '<div class="metricas">' + metrica(h.eventosRecebidos, "vendas recebidas hoje", "webhook") + metrica(h.xmlEnviados, "XML de NF enviados", "libera a etiqueta") +
+          metrica(h.ajustesAnuncio, "estoque e preço ajustados", h.falhasAnuncio ? h.falhasAnuncio + " falha(s)" : "a cada 2 min") + metrica(h.etiquetasBaixadas, "etiquetas baixadas", "PDF 10x15") + "</div>",
+      }),
+    },
+    { saude: "off", html: noArvore({ titulo: "Nuvemshop", sub: "loja da Skyline", saude: "off", classe: "breve", det: "próxima integração" }) },
+  ];
+  $("#conteudo").innerHTML =
+    '<div class="painel"><div class="arvore">' +
+    noArvore({ logo: "/logos/sankhya.svg", marca: "logo-escuro", titulo: "Sankhya", sub: "ERP · fonte de estoque, preço e fiscal", saude: saudeSk,
+      det: "última leitura " + esc(haQuanto(s.sankhya.ultimaLeitura)) + (s.sankhya.ultimoErro ? " · último erro " + esc(haQuanto(s.sankhya.ultimoErro.em)) : "") }) +
+    '<div class="tronco saude-' + saudeSk + '"><div class="rotulos">' +
+      '<span class="rotulo">' + metrica(h.pedidosGravados, "pedidos gravados hoje", "parceiro + pedido 1090") + "</span>" +
+      '<span class="rotulo">' + metrica(haQuanto(s.sankhya.ultimaLeitura), "leitura de estoque e preço", "tabela 0 e TGFEST") + "</span></div></div>" +
+    noArvore({ titulo: "SkyHub", sub: "integração", saude: saudeHub, classe: "hub",
+      det: "última rodada " + esc(haQuanto(s.skyhub.ultimaRodada)) + (s.skyhub.rodadaAbortada ? ' · <span class="warn">abortada: ' + esc(s.skyhub.rodadaAbortada) + "</span>" : "") +
+        "<br>" + esc(s.skyhub.eventosPendentes) + " evento(s) na fila · " + (h.errosLog ? '<a href="#integracao/logs">' + esc(h.errosLog) + " erro(s) hoje</a>" : "0 erros hoje") }) +
+    '<div class="galhos' + (canais.length === 1 ? " um" : "") + '">' + canais.map((c) => '<div class="galho saude-' + c.saude + '">' + c.html + "</div>").join("") + "</div>" +
+    "</div></div>" +
+    '<div class="painel"><h3>Modos de operação</h3><table><tbody>' +
+    [["Pedidos → Sankhya", s.modos.pedidos], ["XML da NF → ML", s.modos.xml], ["Cancelamento no Sankhya", s.modos.cancelamento], ["Estoque → ML", s.modos.estoque], ["Preço → ML", s.modos.preco]]
+      .map(([n, m]) => "<tr><td>" + esc(n) + '</td><td><span class="tag ' + (m === "automatico" ? "ok" : m === "manual" ? "warn" : "") + '">' + esc(m) + "</span></td></tr>").join("") +
+    "</tbody></table></div>";
 }
 
 /* ------------------------------------------------------------------ eventos globais */

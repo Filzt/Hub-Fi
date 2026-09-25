@@ -93,6 +93,20 @@ window.skyAuth = (() => {
 
   function trocarSenha() { mostrar("nova", "Escolha a nova senha."); }
 
+  /**
+   * Confere a senha atual direto no Supabase (a senha não passa pelo SkyHub). Renova a
+   * sessão com a marca de "senha digitada agora", que o Worker exige para trocar o e-mail.
+   * Devolve null se deu certo, ou a mensagem de erro.
+   */
+  async function confirmarSenha(senha) {
+    if (!cliente) return "Login indisponível agora.";
+    const { data } = await cliente.auth.getSession();
+    const email = data.session && data.session.user && data.session.user.email;
+    if (!email) return "Sua sessão expirou. Entre de novo.";
+    const { error } = await cliente.auth.signInWithPassword({ email, password: senha });
+    return error ? (/invalid login credentials/i.test(error.message) ? "Senha atual incorreta." : traduzir(error)) : null;
+  }
+
   // ------------------------------------------------------------------ formulários
   document.addEventListener("submit", async (ev) => {
     const f = ev.target;
@@ -136,5 +150,5 @@ window.skyAuth = (() => {
     if (b.id === "cancelar-nova") esconder();
   });
 
-  return { iniciar, token, renovar, sair, trocarSenha };
+  return { iniciar, token, renovar, sair, trocarSenha, confirmarSenha };
 })();

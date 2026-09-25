@@ -62,3 +62,15 @@ test("permissão: função só vê os módulos dela; admin vê tudo; rota descon
 test("id da função sem acento", () => {
   assert.equal(idDaFuncao("Expedição Manhã"), "expedicao-manha");
 });
+
+test("trocar e-mail exige senha digitada há menos de 5 min", async () => {
+  const { senhaRecente, emailValido } = await import("../src/auth.ts");
+  const agora = 1_800_000_000;
+  assert.equal(senhaRecente({ amr: [{ method: "password", timestamp: agora - 60 }] }, agora), true);
+  assert.equal(senhaRecente({ amr: [{ method: "password", timestamp: agora - 600 }] }, agora), false, "senha de 10 min atrás não vale");
+  assert.equal(senhaRecente({ amr: [{ method: "otp", timestamp: agora - 10 }] }, agora), false, "link de senha não conta como senha");
+  assert.equal(senhaRecente({}, agora), false);
+  assert.equal(emailValido("filipe@gruposkytech.com.br"), true);
+  assert.equal(emailValido("filipe @x.com"), false);
+  assert.equal(emailValido("semarroba.com"), false);
+});
