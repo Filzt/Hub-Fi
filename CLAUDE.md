@@ -22,6 +22,21 @@ Errado: `operando`, `para imprimir`, `última leitura há 2 min`.
 
 Antes de publicar uma tela nova, confira na prévia se algum texto começa com minúscula.
 
+## Tabelas: sempre com paginação, ordenação, filtro e Excel
+
+Regra do Filipe, 25/09/2026. Toda tabela do painel tem:
+- paginação de 10 em 10, com opção de 10, 20, 50 ou Todas;
+- ordenação clicando no cabeçalho;
+- filtro por coluna;
+- botão "Exportar Excel".
+
+Isso é automático (`public/tabela.js`): basta montar `<table>` com `<thead>` dentro de `#conteudo`.
+
+- Coluna sem título ou de checkbox (`th.sel`) fica de fora da ordenação, do filtro e do Excel.
+- "Selecionar todos" pega as linhas filtradas de todas as páginas: use `skyTabela.filtradas(table)`, não o que está visível na página.
+- Tabela dentro da gaveta, ou com a classe `sem-tabela-padrao`, não recebe os controles.
+- O Excel é `.xlsx`, nunca CSV. No CSV o Excel estraga o nº do pedido do ML (16 dígitos) e a chave da NF.
+
 ## Publicação
 
 - Deploy manual com `npx wrangler deploy`, usando `CLOUDFLARE_API_TOKEN` e `CLOUDFLARE_ACCOUNT_ID` do cofre (keyring `fi-ecommerce`).
