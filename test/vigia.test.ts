@@ -60,3 +60,23 @@ test("ntfy recusou: tenta de novo na próxima verificação", async () => {
   assert.equal(JSON.parse(a.meta.vigia_estado).avisadoEm, 0);
   assert.match(a.logs[0], /HTTP 429/);
 });
+
+test("Telegram aceita e ntfy recusa: conta como entregue", async () => {
+  const t0 = Date.now();
+  const a = ambiente({ ultimo_erp_em: String(t0 - 20 * MIN) });
+  const urls: string[] = [];
+  globalThis.fetch = (async (u: string, init: RequestInit) => {
+    urls.push(u);
+    if (u.includes("api.telegram.org")) {
+      const b = JSON.parse(String(init.body));
+      assert.equal(b.chat_id, "42");
+      assert.match(b.text, /^SkyHub parado\n/);
+      return new Response('{"ok":true}', { status: 200 });
+    }
+    return new Response("", { status: 429 });
+  }) as unknown as typeof fetch;
+  const env = { ...(a.env as object), TELEGRAM_BOT_TOKEN: "1:abc", TELEGRAM_CHAT_ID: "42" } as never;
+  assert.match(await verificar(env, t0), /aviso: ok$/);
+  assert.equal(urls.length, 2);
+  assert.ok(JSON.parse(a.meta.vigia_estado).avisadoEm > 0);
+});

@@ -1,4 +1,4 @@
-// skyhub-vigia — Worker separado que avisa no celular (ntfy) quando a rodada automática do
+// skyhub-vigia — Worker separado que avisa no celular (Telegram, e ntfy como 2ª tentativa) quando a rodada automática do
 // SkyHub para. Separado de propósito: se o Cloudflare cortar a rodada do skyhub, este continua.
 //
 // A cada 5 min lê do Store do skyhub (binding de Durable Object de outro script, só leitura +
@@ -7,9 +7,13 @@
 //   - parado há mais de LIMITE_MIN → aviso "parou", repetido no máximo a cada REPETIR_MIN;
 //   - voltou depois de um aviso → aviso "voltou".
 //
-// ntfy (docs.ntfy.sh/publish, lida direto em 26/09/2026): POST JSON na raiz https://ntfy.sh/
-// com {topic, title, message, tags, priority}. Limite do ntfy.sh é por IP (250 mensagens/dia) e o
-// IP de saída do Cloudflare é compartilhado: se voltar 429, fica registrado no log do SkyHub.
+// Canais (docs lidas direto em 26/09/2026):
+//   - Telegram (core.telegram.org/bots/api): POST JSON em /bot<token>/sendMessage {chat_id, text}.
+//     Limite é por robô, não por IP: é o canal principal.
+//   - ntfy (docs.ntfy.sh/publish): POST JSON na raiz https://ntfy.sh/ {topic, title, message...}.
+//     O limite do ntfy.sh é por IP ("A visitor is identified by its IP address") e o IP de saída do
+//     Cloudflare é compartilhado: em 26/09/2026 voltava 429 sempre. Fica só como 2ª tentativa.
+// O aviso conta como entregue se QUALQUER canal aceitar.
 
 interface StoreRpc {
   meta(chave: string): Promise<string | null>;
@@ -19,7 +23,9 @@ interface StoreRpc {
 
 interface Env {
   STORE: DurableObjectNamespace;
-  NTFY_TOPIC: string; // secret: nome do canal do ntfy (quem sabe o nome lê as mensagens)
+  TELEGRAM_BOT_TOKEN?: string; // secret: chave do robô (cofre: TELEGRAM_BOT_TOKEN)
+  TELEGRAM_CHAT_ID?: string; // secret: conversa do Filipe com o robô
+  NTFY_TOPIC?: string; // secret: nome do canal do ntfy (quem sabe o nome lê as mensagens)
   PAINEL_URL: string;
 }
 
@@ -35,18 +41,34 @@ function store(env: Env): StoreRpc {
 const hora = (ms: number) =>
   new Date(ms).toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" });
 
-async function avisar(env: Env, titulo: string, texto: string, prioridade: number, tags: string[]): Promise<string> {
+async function enviar(url: string, corpo: unknown): Promise<string> {
   try {
-    const r = await fetch("https://ntfy.sh/", {
+    const r = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ topic: env.NTFY_TOPIC, title: titulo, message: texto, priority: prioridade, tags, click: env.PAINEL_URL }),
+      body: JSON.stringify(corpo),
       signal: AbortSignal.timeout(8000),
     });
     return r.ok ? "ok" : `HTTP ${r.status}`;
   } catch (e) {
     return `falha de rede (${(e as Error).message})`;
   }
+}
+
+/** Manda em todos os canais configurados; devolve "ok" se algum aceitou, senão o motivo de cada um. */
+async function avisar(env: Env, titulo: string, texto: string, prioridade: number, tags: string[]): Promise<string> {
+  const tentativas: Array<[string, Promise<string>]> = [];
+  if (env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_CHAT_ID) {
+    tentativas.push(["telegram", enviar(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`,
+      { chat_id: env.TELEGRAM_CHAT_ID, text: `${titulo}\n${texto}\n${env.PAINEL_URL}`, disable_web_page_preview: true })]);
+  }
+  if (env.NTFY_TOPIC) {
+    tentativas.push(["ntfy", enviar("https://ntfy.sh/",
+      { topic: env.NTFY_TOPIC, title: titulo, message: texto, priority: prioridade, tags, click: env.PAINEL_URL })]);
+  }
+  if (!tentativas.length) return "nenhum canal configurado";
+  const res = await Promise.all(tentativas.map(async ([c, p]) => [c, await p] as const));
+  return res.some(([, r]) => r === "ok") ? "ok" : res.map(([c, r]) => `${c} ${r}`).join("; ");
 }
 
 export async function verificar(env: Env, agora = Date.now()): Promise<string> {
@@ -86,7 +108,7 @@ export default {
   async fetch(req: Request, env: Env): Promise<Response> {
     // Só um teste manual do canal, protegido pelo próprio nome do canal: POST /teste com o header x-canal.
     const url = new URL(req.url);
-    if (req.method === "POST" && url.pathname === "/teste" && req.headers.get("x-canal") === env.NTFY_TOPIC) {
+    if (req.method === "POST" && url.pathname === "/teste" && env.NTFY_TOPIC && req.headers.get("x-canal") === env.NTFY_TOPIC) {
       const r = await avisar(env, "SkyHub: teste", "Se você está lendo isto, o aviso do SkyHub chega no seu celular.", 3, ["bell"]);
       return new Response(r, { status: r === "ok" ? 200 : 502 });
     }

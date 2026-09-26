@@ -1,6 +1,7 @@
-# skyhub-vigia: avisa no celular (ntfy) quando a rodada automática do skyhub para.
+# skyhub-vigia: avisa no celular (Telegram; ntfy como 2ª tentativa) quando a rodada automática do skyhub para.
 # Deploy: npx wrangler deploy -c vigia/wrangler.toml   (a partir da raiz do repo)
-# Secret: NTFY_TOPIC (nome do canal; guardado também no cofre como NTFY_TOPIC_SKYHUB)
+# Secrets: TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID (cofre, via scripts/guardar_telegram.py) e NTFY_TOPIC
+# (cofre: NTFY_TOPIC_SKYHUB)
 name = "skyhub-vigia"
 main = "src/index.ts"
 compatibility_date = "2026-09-01"
