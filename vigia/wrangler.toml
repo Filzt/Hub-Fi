@@ -1,0 +1,22 @@
+# skyhub-vigia: avisa no celular (ntfy) quando a rodada automática do skyhub para.
+# Deploy: npx wrangler deploy -c vigia/wrangler.toml   (a partir da raiz do repo)
+# Secret: NTFY_TOPIC (nome do canal; guardado também no cofre como NTFY_TOPIC_SKYHUB)
+name = "skyhub-vigia"
+main = "src/index.ts"
+compatibility_date = "2026-09-01"
+
+[observability]
+enabled = true
+
+# Store do skyhub (Durable Object de outro script): lê "ultimo_erp_em"/"cron_etapa" e guarda
+# o próprio estado em "vigia_estado".
+[[durable_objects.bindings]]
+name = "STORE"
+class_name = "Store"
+script_name = "skyhub"
+
+[triggers]
+crons = ["*/5 * * * *"]
+
+[vars]
+PAINEL_URL = "https://skyhub.olivera-kaique2004.workers.dev"
