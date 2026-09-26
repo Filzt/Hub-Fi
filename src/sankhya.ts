@@ -11,6 +11,7 @@
 // O gateway responde HTTP 200 mesmo em erro de negócio: quem decide é o campo status.
 
 import { TIMEOUT_MS } from "./config.ts";
+import { origemDaSaida, sankhyaFetch } from "./saida.ts";
 import { type Env, ErroDefinitivo, ErroTemporario } from "./tipos.ts";
 
 let cache: { token: string; expira: number } | null = null;
@@ -32,7 +33,7 @@ async function token(env: Env): Promise<string> {
   if (cache && cache.expira > Date.now()) return cache.token;
   let r: Response;
   try {
-    r = await fetch(`${env.SANKHYA_API}/authenticate`, {
+    r = await sankhyaFetch(env, `${env.SANKHYA_API}/authenticate`, {
       method: "POST",
       headers: { "X-Token": env.SANKHYA_XTOKEN, "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
@@ -46,7 +47,11 @@ async function token(env: Env): Promise<string> {
     throw new ErroTemporario(`Sankhya authenticate: falha de rede (${(e as Error).message})`);
   }
   if (!r.ok) {
-    const msg = `Sankhya authenticate: HTTP ${r.status}`;
+    // Trecho curto do corpo: o 401 de 26/09/2026 só aparecia como código, sem o motivo.
+    const corpo = (await r.text().catch(() => "")).replace(/\s+/g, " ").slice(0, 200);
+    // De onde a saída fixa falou com o Sankhya (ver saida.ts).
+    const origem = await origemDaSaida(env).catch(() => "?");
+    const msg = `Sankhya authenticate: HTTP ${r.status} [origem ${origem}]${corpo ? ` (${corpo})` : ""}`;
     throw r.status >= 500 ? new ErroTemporario(msg) : new ErroDefinitivo(msg);
   }
   const d = (await r.json()) as Record<string, unknown>;
@@ -76,7 +81,8 @@ export async function consultar(env: Env, sql: string): Promise<Linha[]> {
 async function consultarUmaVez(env: Env, sql: string): Promise<Linha[]> {
   let r: Response;
   try {
-    r = await fetch(
+    r = await sankhyaFetch(
+      env,
       `${env.SANKHYA_API}/gateway/v1/mge/service.sbr?serviceName=DbExplorerSP.executeQuery&outputType=json`,
       {
         method: "POST",
@@ -146,7 +152,7 @@ async function servico(env: Env, modulo: "mge" | "mgecom", serviceName: string, 
 async function servicoUmaVez(env: Env, modulo: "mge" | "mgecom", serviceName: string, requestBody: unknown): Promise<any> {
   let r: Response;
   try {
-    r = await fetch(`${env.SANKHYA_API}/gateway/v1/${modulo}/service.sbr?serviceName=${serviceName}&outputType=json`, {
+    r = await sankhyaFetch(env, `${env.SANKHYA_API}/gateway/v1/${modulo}/service.sbr?serviceName=${serviceName}&outputType=json`, {
       method: "POST",
       headers: { Authorization: `Bearer ${await token(env)}`, "Content-Type": "application/json" },
       body: JSON.stringify({ serviceName, requestBody }),

@@ -99,7 +99,7 @@ export function moduloDaRota(metodo: string, p: string): Modulo | "admin" | "sis
   if (p.startsWith("/api/reguas")) return "precificacao";
   if (p === "/api/publicacao/fichas/importar") return "admin";
   if (p.startsWith("/api/publicacao/") || p.startsWith("/api/flex")) return "publicacao"; // Flex: anúncios do ML
-  if (p === "/api/integracao" || p === "/api/saude" || p.startsWith("/api/nfs") || p.startsWith("/api/eventos") ||
+  if (p === "/api/integracao" || p === "/api/integracao/origem" || p === "/api/saude" || p.startsWith("/api/nfs") || p.startsWith("/api/eventos") ||
       p === "/api/log" || p === "/api/meli/status") return "integracao";
   void metodo;
   return "admin";

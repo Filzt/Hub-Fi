@@ -20,6 +20,7 @@ import { type Env, ErroDefinitivo, ErroTemporario } from "./tipos.ts";
 
 export { MeliToken } from "./meli.ts";
 export { Store } from "./store.ts";
+import { atenderSaida, origemDaSaida, origemLocal, ROTA_SAIDA } from "./saida.ts";
 
 const json = (dados: unknown, status = 200) =>
   new Response(JSON.stringify(dados), {
@@ -292,6 +293,10 @@ async function rotaApi(req: Request, env: Env, url: URL): Promise<Response> {
   }
 
   // Módulo Integração: saúde e volume de hoje -------------------------------------
+  if (req.method === "GET" && p === "/api/integracao/origem") {
+    // Diagnóstico da saída fixa para o Sankhya (saida.ts): de onde esta execução e a saída falam.
+    return json({ execucao: await origemLocal(), saidaSankhya: await origemDaSaida(env).catch((e) => `erro: ${(e as Error).message}`) });
+  }
   if (req.method === "GET" && p === "/api/integracao") {
     const agora = Date.now();
     const inicioDia = agora - ((agora - 3 * 3_600_000) % 86_400_000); // meia-noite em São Paulo (UTC−3)
@@ -450,6 +455,7 @@ export default {
         // diagnóstico agora é GET /api/admin/config, com login de administrador.
         return json({ supabase: { url: env.SUPABASE_URL, chavePublicavel: env.SUPABASE_PUBLISHABLE_KEY } });
       }
+      if (url.pathname === ROTA_SAIDA) return await atenderSaida(req, env);
       if (url.pathname.startsWith("/api/")) return await rotaApi(req, env, url);
       if (url.pathname === "/painel") return Response.redirect(new URL("/", url).toString(), 302);
       return json({ erro: "não encontrado" }, 404);

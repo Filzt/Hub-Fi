@@ -15,10 +15,20 @@ enabled = true
 [assets]
 directory = "./public"
 binding = "ASSETS"
-run_worker_first = ["/api/*", "/ml/webhook", "/config", "/painel"]
+run_worker_first = ["/api/*", "/ml/webhook", "/config", "/painel", "/interno/*"]
 
 # Estado em Durable Objects com SQLite: não exige criar D1/Queue/R2 antes do
 # primeiro deploy (o build do GitHub funciona sem provisionamento manual).
+# Saída fixa para o Sankhya (26/09/2026, ver src/saida.ts): o gateway do Sankhya recusa o login
+# vindo de alguns datacenters (visto: Mumbai). O handler fetch roda perto de São Paulo; a rodada
+# agendada fala com o Sankhya pela rota /interno/sankhya, chamando o próprio Worker (SELF).
+[placement]
+region = "aws:sa-east-1"
+
+[[services]]
+binding = "SELF"
+service = "skyhub"
+
 [[durable_objects.bindings]]
 name = "MELI_TOKEN"
 class_name = "MeliToken"

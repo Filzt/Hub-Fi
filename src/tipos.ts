@@ -28,6 +28,7 @@ export interface Env {
 
   MELI_TOKEN: DurableObjectNamespace<MeliToken>;
   STORE: DurableObjectNamespace<Store>;
+  SELF?: Fetcher; // o próprio Worker: saída fixa para o Sankhya (saida.ts)
 }
 
 /** Erro que vale tentar de novo (5xx, 429, timeout, rede). */
