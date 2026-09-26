@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Plano de ação: rodada automática do SkyHub</title>
+<style>
+  @page { size: A4; margin: 16mm 15mm 16mm 15mm; }
+  body { font: 10.5pt/1.45 "Segoe UI", Arial, sans-serif; color: #0f172a; margin: 0; }
+  header { display: flex; align-items: center; gap: 14px; border-bottom: 3px solid #5b8dfe; padding-bottom: 10px; margin-bottom: 14px; }
+  header img { height: 34px; }
+  header .t { flex: 1; }
+  h1 { font-size: 17pt; margin: 0; }
+  .sub { color: #64748b; font-size: 9.5pt; }
+  h2 { font-size: 12.5pt; margin: 18px 0 6px; color: #1d4ed8; }
+  .resumo { background: #eff5ff; border-left: 4px solid #2563eb; padding: 10px 12px; border-radius: 6px; }
+  .resumo p { margin: 4px 0; }
+  table { width: 100%; border-collapse: collapse; margin: 6px 0; font-size: 9.5pt; page-break-inside: auto; }
+  tr { page-break-inside: avoid; }
+  th { background: #f1f5f9; text-align: left; padding: 6px 7px; border-bottom: 1px solid #cbd5e1; font-size: 8.5pt; text-transform: uppercase; letter-spacing: .03em; color: #475569; }
+  td { padding: 6px 7px; border-bottom: 1px solid #e2e8f0; vertical-align: top; }
+  .tag { display: inline-block; font-size: 8pt; font-weight: 600; padding: 1px 7px; border-radius: 999px; white-space: nowrap; }
+  .feito { background: #ecfdf5; color: #047857; } .decisao { background: #fff8eb; color: #b45309; } .fazer { background: #eff5ff; color: #1d4ed8; } .erro { background: #fef2f2; color: #b91c1c; }
+  .fonte { color: #64748b; font-size: 8.5pt; }
+  .n { text-align: right; white-space: nowrap; }
+  ul { margin: 4px 0 4px 18px; padding: 0; } li { margin: 2px 0; }
+  .rodape { margin-top: 18px; border-top: 1px solid #e2e8f0; padding-top: 6px; color: #64748b; font-size: 8.5pt; }
+  .quebra { page-break-before: always; }
+</style>
+</head>
+<body>
+<header>
+  <img src="../public/logos/skyhub-nome.png" alt="SkyHub">
+  <div class="t"><h1>Plano de ação: rodada automática parada</h1>
+  <div class="sub">Incidente de 25 e 26/09/2026 · Preparado para Filipe · 26/09/2026</div></div>
+</header>
+
+<div class="resumo">
+  <p><b>O que aconteceu.</b> A rodada automática do SkyHub (a cada 2 min: estoque, preço, NF, etiquetas, publicação) ficou parada de 21:24 de 25/09 até 00:46 de 26/09. O mesmo aconteceu por 1h16 na noite de 24/09, e houve outros 4 blocos de cortes. Os pedidos e as notificações do Mercado Livre continuaram funcionando, porque rodam por outro caminho.</p>
+  <p><b>Causa.</b> O SkyHub está no <b>plano gratuito do Cloudflare Workers</b>, que limita cada rodada a <b>10 ms de CPU</b>. A nossa rodada usa, em média, 47 ms. O Cloudflare tolera o excesso de vez em quando e corta quando ele vira rotina. <b>Não foi o publicador de anúncios</b>: um dos cortes foi às 03:44, sem ninguém usando o sistema.</p>
+  <p><b>Correção definitiva.</b> Passar para o plano pago (a partir de US$ 5 por mês, com 30 s de CPU por rodada) e ter um vigia independente que avisa no WhatsApp se a rodada parar.</p>
+</div>
+
+<h2>1. Linha do tempo (horário de Brasília)</h2>
+<table>
+  <tr><th>Quando</th><th>O que o Cloudflare registrou</th><th class="n">Rodadas</th></tr>
+  <tr><td>24/09 23:06 – 23:24</td><td>Rodada cortada por limite de recursos (CPU parada em 10 ms)</td><td class="n">10</td></tr>
+  <tr><td>24/09 23:26 – 25/09 00:42</td><td><b>Erro interno contínuo</b> por 1h16. Voltou sozinho: não houve publicação nesse intervalo</td><td class="n">39</td></tr>
+  <tr><td>25/09 03:44 – 05:12</td><td>Cortes seguidos. Madrugada, ninguém usando o sistema</td><td class="n">45</td></tr>
+  <tr><td>25/09 07:12 – 07:34</td><td>Cortes seguidos</td><td class="n">12</td></tr>
+  <tr><td>25/09 19:26 – 19:28</td><td>Cortes seguidos</td><td class="n">2</td></tr>
+  <tr><td>25/09 21:18 – 21:22</td><td>Cortes seguidos</td><td class="n">3</td></tr>
+  <tr><td>25/09 21:24 – 26/09 00:44</td><td><b>Erro interno contínuo</b> por 3h20: toda rodada morria em ~5 ms, sem rodar o nosso código</td><td class="n">102</td></tr>
+  <tr><td>26/09 00:45</td><td>Passos rodados à mão e nova publicação do SkyHub</td><td class="n">—</td></tr>
+  <tr><td>26/09 00:46</td><td><b>Primeira rodada completa com sucesso</b>. Estoque e preço conferidos às 00:51: 448 de 454 anúncios corretos. Os 6 restantes são exceções conhecidas.</td><td class="n">—</td></tr>
+</table>
+<p class="fonte">Fonte: histórico de execuções agendadas do Cloudflare (GraphQL Analytics, workersInvocationsScheduled), lido em 26/09/2026, cobrindo 24/09 19:10 a 26/09 00:46 (873 rodadas). Também houve 13 falhas isoladas de uma rodada só, que se recuperaram na seguinte.</p>
+
+<h2 class="quebra">2. Causa, com evidência</h2>
+<table>
+  <tr><th>Evidência</th><th>O que mostra</th></tr>
+  <tr><td>Rodadas cortadas param em <b>exatamente 10 ms</b> de CPU</td><td>O corte é o limite de CPU do plano gratuito, e não um erro do nosso código.</td></tr>
+  <tr><td>Rodada normal: mediana 47 ms, 90% até 57 ms, máximo 194 ms</td><td>A rodada sempre passou de 10 ms. Funcionava pela tolerância do Cloudflare, que acaba quando o excesso fica constante.</td></tr>
+  <tr><td>Envio do Flex cortado na 51ª chamada (25/09)</td><td>50 chamadas por execução também é limite do plano gratuito; no pago são 10.000.</td></tr>
+  <tr><td>Corte às 03:44, com o sistema parado</td><td>Não depende de uso nem do publicador de anúncios.</td></tr>
+</table>
+<p>Doc oficial (developers.cloudflare.com/workers/platform/limits, atualizada em 05/09/2026, lida direto):</p>
+<ul>
+  <li>Workers Free: "CPU time per Cron Trigger: 10 ms". Workers Paid: "30 seconds (&lt; 1 hour interval)".</li>
+  <li>"If your Worker starts hitting the limit consistently, its execution will be terminated".</li>
+</ul>
+<p><b>O que não está confirmado:</b> por que, depois de uma sequência de cortes, o Cloudflare passa a devolver erro interno em toda rodada. Aconteceu duas vezes, sempre logo depois dos cortes. Em 24/09 voltou sozinho em 1h16; em 26/09 voltou logo depois da nova publicação, mas <b>não dá para afirmar que foi ela</b>. É comportamento da plataforma; o plano pago remove os cortes, que vêm antes dele.</p>
+
+<h2>3. Impacto</h2>
+<ul>
+  <li>3h20 sem sincronizar estoque e preço do Sankhya para o ML, sem mandar XML de NF e sem atualizar a Expedição. Em 24 e 25/09, os outros blocos somaram mais ~3h40.</li>
+  <li>Os pedidos continuaram sendo gravados no Sankhya: 2 depois da meia-noite.</li>
+  <li>Estoque e preço estavam corretos na conferência de 00:51. <b>Não verifiquei</b> se algum anúncio vendeu, no intervalo, uma unidade que já tinha saído no Sankhya.</li>
+</ul>
+
+<h2 class="quebra">4. Plano de ação</h2>
+<table>
+  <tr><th>#</th><th>Ação</th><th>Por quê</th><th>Quem</th><th>Custo</th><th>Situação</th></tr>
+  <tr><td>1</td><td><b>Passar o SkyHub para o Workers Paid</b>, numa conta Cloudflare <b>da empresa</b>. Hoje a conta está no nome "olivera-kaique2004".</td><td>Remove a causa: 30 s de CPU por rodada e 10.000 chamadas por execução. Conta da empresa evita depender de pessoa.</td><td>Filipe (cartão e conta) · Claude (migração)</td><td>A partir de US$ 5/mês por conta</td><td><span class="tag decisao">Sua decisão</span></td></tr>
+  <tr><td>2</td><td><b>Vigia independente</b>: um Worker separado, a cada 5 min, confere a última rodada. Se ela passar de 10 min parada, avisa no WhatsApp; avisa de novo quando voltar. No máximo 1 alerta a cada 30 min.</td><td>Se a rodada principal morrer, quem avisa não pode morrer junto.</td><td>Claude</td><td>Dentro do plano</td><td><span class="tag fazer">Depende do 3</span></td></tr>
+  <tr><td>3</td><td><b>Escolher o envio de WhatsApp</b>:<br>(a) WhatsApp Cloud API da Meta: oficial; precisa de conta Meta Business, número dedicado e modelo de mensagem aprovado.<br>(b) Twilio: oficial e pago.<br>(c) CallMeBot: grátis, só para uso pessoal e hoje com fila de espera. Não recomendo para operação.</td><td>Recomendo (a). Até ficar pronto, o painel já mostra "Sem resposta" em vermelho em Integrações.</td><td>Filipe</td><td>Por mensagem, conforme a Meta ou a Twilio (confirmar)</td><td><span class="tag decisao">Sua decisão</span></td></tr>
+  <tr><td>4</td><td><b>Marcador de etapa</b> na rodada: se ela morrer, a próxima registra no log onde parou.</td><td>Hoje o corte não deixa rastro no nosso log.</td><td>Claude</td><td>—</td><td><span class="tag feito">Feito 26/09 00:45</span></td></tr>
+  <tr><td>5</td><td><b>Dividir a rodada</b> em rodadas menores e alternadas (estoque; NF e Expedição; publicação).</td><td>Menos CPU por execução, e uma falha não derruba o resto.</td><td>Claude</td><td>—</td><td><span class="tag fazer">Depois do 1</span></td></tr>
+  <tr><td>6</td><td><b>Limites explícitos</b> no wrangler (CPU por execução) e alerta de consumo de CPU.</td><td>Ver o risco antes do corte.</td><td>Claude</td><td>—</td><td><span class="tag fazer">Depois do 1</span></td></tr>
+  <tr><td>7</td><td><b>Conferência diária automática</b> Sankhya × SkyHub × ML (estoque e preço), com resumo no WhatsApp.</td><td>Pegar qualquer divergência no mesmo dia.</td><td>Claude</td><td>—</td><td><span class="tag fazer">Depois do 2</span></td></tr>
+  <tr><td>8</td><td><b>Procedimento de recuperação</b> documentado: rodar à mão envios, NFs e estoque; republicar; conferir.</td><td>Recuperar em minutos se acontecer de novo.</td><td>Claude</td><td>—</td><td><span class="tag feito">Descrito abaixo</span></td></tr>
+  <tr><td>9</td><td><b>Pendências vistas no log</b>: o pedido 9131 cancelado no ML não foi cancelado no Sankhya ("Não autorizado": o usuário da API não pode cancelar nota); o pedido 9139 foi gravado mas não confirmado (evento de data de negociação).</td><td>Nota de venda cancelada ainda ativa; pedido parado sem confirmar.</td><td>Time Sankhya · Filipe</td><td>—</td><td><span class="tag erro">Resolver à mão</span></td></tr>
+</table>
+
+<h2>5. Procedimento de recuperação</h2>
+<ul>
+  <li><b>Sinal:</b> em Integrações, o SkyHub aparece "Sem resposta", ou a última rodada tem mais de 10 minutos.</li>
+  <li><b>1.</b> Rodar à mão, pelo token do sistema, na ordem: atualizar envios (/api/etiquetas/atualizar), varrer NFs (/api/nfs/varrer) e sincronizar estoque (/api/estoque/rodar).</li>
+  <li><b>2.</b> Republicar o SkyHub (wrangler deploy). Em 26/09 a rodada voltou logo depois; em 24/09 voltou sozinha em 1h16.</li>
+  <li><b>3.</b> Conferir no histórico do Cloudflare se a rodada seguinte terminou com sucesso.</li>
+  <li><b>4.</b> Rodar a conferência de estoque e preço dos três elos.</li>
+</ul>
+
+<h2>6. Como vamos saber que resolveu</h2>
+<ul>
+  <li>7 dias seguidos sem nenhuma rodada cortada por limite ou com erro interno no histórico do Cloudflare.</li>
+  <li>Alerta do vigia testado de ponta a ponta: simular rodada parada e receber o WhatsApp em até 15 min.</li>
+  <li>Conferência diária com 100% dos anúncios corretos, fora as exceções conhecidas.</li>
+</ul>
+
+<div class="rodape">Dados lidos em 26/09/2026: histórico do Cloudflare (26 h), log do SkyHub e conferência ao vivo Sankhya × SkyHub × ML. Preço e limites do Cloudflare conferidos na documentação oficial (limits, atualizada em 05/09/2026; pricing, atualizada em 28/08/2026).</div>
+</body>
+</html>
