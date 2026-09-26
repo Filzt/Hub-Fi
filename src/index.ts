@@ -461,21 +461,31 @@ export default {
 
   async scheduled(_ev: ScheduledController, env: Env, _ctx: ExecutionContext): Promise<void> {
     const store = storeStub(env);
+    // Marcador de etapa: se a rodada anterior morreu no meio (o Cloudflare mata sem exceção —
+    // "internalError"/"exceededResources", 26/09/2026), a próxima registra onde parou.
+    const anterior = await store.meta("cron_etapa");
+    if (anterior && !anterior.startsWith("fim:")) await store.log("erro", null, `rodada automática anterior morreu na etapa ${anterior.split(":")[0]} (${new Date(Number(anterior.split(":")[1])).toISOString()})`);
+    const etapa = (nome: string) => store.setMeta("cron_etapa", `${nome}:${Date.now()}`);
+    await etapa("eventos");
     const devidos = await store.eventosDevidos();
     for (const ev of devidos) await processarEvento(env, ev); // sequencial: respeita o ML
     // Fases da Expedição: relê alguns envios impressos para ver se já foram despachados
     // (o webhook "shipments" cobre quase tudo; isto pega o que ele perder).
+    await etapa("envios");
     try { await atualizarEnviosPendentes(env, 5); } catch (e) { await store.log("aviso", null, `atualização de envios: ${(e as Error).message}`); }
+    await etapa("nfs");
     try {
       await varrerNfs(env, env.XML_MODO === "automatico");
     } catch (e) {
       await store.log("erro", null, `varredura de NF falhou: ${(e as Error).message}`);
     }
+    await etapa("estoque");
     try {
       await sincronizarEstoque(env);
     } catch (e) {
       await store.log("erro", null, `sincronização de estoque/preço falhou: ${(e as Error).message}`);
     }
+    await etapa("retencao");
     // Retenção de eventos (auditoria F1): 1x por dia apaga os concluídos com mais de 30 dias.
     try {
       if (Date.now() - Number((await store.meta("limpeza_eventos_em")) ?? 0) > 86_400_000) {
@@ -484,6 +494,7 @@ export default {
         if (n) await store.log("info", null, `retenção: ${n} eventos concluídos com mais de 30 dias apagados`);
       }
     } catch (e) { await store.log("aviso", null, `retenção de eventos: ${(e as Error).message}`); }
+    await etapa("publicacao");
     // Publicação pelo SKU: candidatos do Sankhya 1x por hora; casamento, fichas e auditoria
     // aos poucos a cada rodada (poucos subrequests — o resto do cron já usa bastante).
     try {
@@ -496,5 +507,6 @@ export default {
     } catch (e) {
       await store.log("erro", null, `publicação (fila/casamento/auditoria) falhou: ${(e as Error).message}`);
     }
+    await store.setMeta("cron_etapa", `fim:${Date.now()}`);
   },
 } satisfies ExportedHandler<Env>;
